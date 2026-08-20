@@ -92,6 +92,16 @@ final class Library: ObservableObject {
             .map(\.item)
     }
 
+    /// The favourites you reach for most, for the pinned row at the top of the
+    /// panel. Ties break on recency so the row is stable but not frozen.
+    func topFavourites(limit: Int) -> [GifItem] {
+        entries.values
+            .filter(\.isFavourite)
+            .sorted { ($0.useCount, $0.lastUsed) > ($1.useCount, $1.lastUsed) }
+            .prefix(limit)
+            .map(\.item)
+    }
+
     /// Media the cache must not reap. Favourites are explicit intent and are
     /// kept indefinitely. A habit is only a habit while it lasts, so a
     /// often-used GIF keeps its protection only while it is still being used.

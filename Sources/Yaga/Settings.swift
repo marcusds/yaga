@@ -37,6 +37,7 @@ struct Hotkey: Hashable {
     var modifiers: UInt32
 
     static let `default` = Hotkey(keyCode: UInt32(kVK_ANSI_G), modifiers: UInt32(cmdKey | optionKey))
+    static let pasteDefault = Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | optionKey))
 
     /// Presets offered in Settings, so we don't need a full shortcut recorder.
     static let presets: [(name: String, hotkey: Hotkey)] = [
@@ -48,8 +49,18 @@ struct Hotkey: Hashable {
         ("⌃⌥⌘F", Hotkey(keyCode: UInt32(kVK_ANSI_F), modifiers: UInt32(controlKey | optionKey | cmdKey))),
     ]
 
+    /// Offered for the paste shortcut. Kept apart from `presets` so the two
+    /// pickers cannot land on the same combination.
+    static let pastePresets: [(name: String, hotkey: Hotkey)] = [
+        ("⌥⌘V", Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | optionKey))),
+        ("⌃⌥V", Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(controlKey | optionKey))),
+        ("⇧⌘V", Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | shiftKey))),
+        ("⌃⌥⌘V", Hotkey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(controlKey | optionKey | cmdKey))),
+        ("⌃⌥⌘Space", Hotkey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey | cmdKey))),
+    ]
+
     var displayName: String {
-        Hotkey.presets.first { $0.hotkey == self }?.name ?? "Custom"
+        (Hotkey.presets + Hotkey.pastePresets).first { $0.hotkey == self }?.name ?? "Custom"
     }
 }
 
@@ -106,6 +117,7 @@ final class Settings: ObservableObject {
         didSet { defaults.set(closeAfterCopy, forKey: "closeAfterCopy") }
     }
 
+
     /// Columns in the GIF grid. Pinch-to-zoom and ⌘+/⌘- drive this.
     @Published var gridColumns: Int = UserDefaults.standard.object(forKey: "gridColumns") as? Int ?? 3 {
         didSet {
@@ -139,6 +151,24 @@ final class Settings: ObservableObject {
     }() {
         didSet {
             defaults.set([Int(hotkey.keyCode), Int(hotkey.modifiers)], forKey: "hotkey")
+            HotkeyManager.shared.reregister()
+        }
+    }
+
+    /// Opens the panel in paste mode, where picking a GIF hands focus back and
+    /// presses ⌘V. Nil means the second shortcut is off; it needs the
+    /// Accessibility permission, so it is not enabled by default.
+    @Published var pasteHotkey: Hotkey? = {
+        guard let codes = UserDefaults.standard.object(forKey: "pasteHotkey") as? [Int],
+              codes.count == 2 else { return nil }
+        return Hotkey(keyCode: UInt32(codes[0]), modifiers: UInt32(codes[1]))
+    }() {
+        didSet {
+            if let pasteHotkey {
+                defaults.set([Int(pasteHotkey.keyCode), Int(pasteHotkey.modifiers)], forKey: "pasteHotkey")
+            } else {
+                defaults.removeObject(forKey: "pasteHotkey")
+            }
             HotkeyManager.shared.reregister()
         }
     }

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// `Yaga --self-test` exercises the cache end to end: naming stability,
@@ -98,7 +99,86 @@ enum SelfTest {
         check("recent but rarely used is not protected",
               !Library.isProtected(entry(uses: 2, favourite: false, used: now), now: now))
 
+        await checkKeyboardNav(check)
+
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
+    }
+
+    /// Grid arithmetic is easy to get subtly wrong at the edges — the last row
+    /// is usually short, and the digit keys must not steal typing.
+    @MainActor
+    private static func checkKeyboardNav(_ check: (String, Bool) -> Void) {
+        let nav = KeyNav.shared
+        var activated: [Int] = []
+        var shelfSteps = 0
+        nav.onActivate = { activated.append($0) }
+        nav.onShelfStep = { shelfSteps += $0 }
+
+        // 7 items in a 3-wide grid: rows of 3, 3, then 1.
+        func fresh(query empty: Bool = true, count: Int = 7) {
+            nav.reset()
+            nav.itemCount = count
+            nav.columns = 3
+            nav.hasShelfBar = empty
+            nav.queryIsEmpty = empty
+            activated = []
+            shelfSteps = 0
+        }
+
+        func press(_ code: UInt16) {
+            _ = nav.handle(key(code, characters: ""))
+        }
+        func type(_ character: String) -> Bool {
+            nav.handle(key(0, characters: character))
+        }
+
+        fresh()
+        press(125) // down
+        check("down from search lands on the shelf tabs", nav.zone == .shelf)
+        press(124) // right
+        check("right steps the shelf", shelfSteps == 1)
+        press(125)
+        check("down from the shelf enters the grid", nav.zone == .grid && nav.selection == 0)
+        press(124)
+        press(125)
+        check("down moves a whole row", nav.selection == 4)
+        press(125)
+        check("down from a short last row lands on its final cell", nav.selection == 6)
+        press(125)
+        check("down at the end stays put", nav.selection == 6)
+        press(126) // up
+        check("up moves a whole row back", nav.selection == 3)
+        press(123) // left
+        check("left steps one cell", nav.selection == 2)
+        press(36) // return
+        check("return activates the selection", activated == [2])
+        press(53) // escape
+        check("escape backs out to the shelf", nav.zone == .shelf)
+        press(53)
+        check("escape again returns to search", nav.zone == .search)
+        check("escape in search is left to close the panel", !nav.handle(key(53, characters: "")))
+
+        fresh()
+        check("a digit in an empty search box picks a GIF", type("3") && activated == [2])
+        fresh(query: false)
+        check("a digit is typed once the search box has text", !type("3") && activated.isEmpty)
+        fresh(count: 2)
+        check("a digit past the last GIF does nothing", type("5") && activated.isEmpty)
+
+        fresh()
+        check("letters always reach the search field", !type("a"))
+
+        nav.reset()
+        nav.onActivate = nil
+        nav.onShelfStep = nil
+    }
+
+    private static func key(_ code: UInt16, characters: String) -> NSEvent {
+        NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+        )!
     }
 }

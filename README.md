@@ -28,7 +28,18 @@ an hour. Keys live in the Keychain.
 
 ## Notes
 
+- Fully keyboard driven. The search box has focus on open; ↓ moves to the shelf
+  tabs (←/→ to switch) and on into the grid; arrows move the selection and ↵ or
+  Space picks. 1–9 pick the first nine GIFs directly — including as the opening
+  keystroke in the empty search box, after which digits type normally. Esc walks
+  back up, then closes.
 - Pinch or ⌘+/⌘- to change grid density.
+- An optional second shortcut (Settings → Behaviour → Insert shortcut, default
+  ⌥⌘V) opens the panel in insert mode: your pick is copied, focus returns to the
+  app you came from, and ⌘V is pressed for you. The menu bar icon and the main
+  shortcut always just copy. Insert mode needs Accessibility access, which macOS
+  binds to the app's signature — re-grant it if you rebuild with a different
+  identity.
 - GIF bytes are content-addressed in `~/Library/Caches/Yaga/`; a daily reaper
   expires unused GIFs after 30 days and trims to 500 MB. Favourites are never
   evicted; GIFs used 3+ times are protected while used in the last 6 months.

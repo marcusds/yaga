@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: Settings
     @EnvironmentObject private var library: Library
     @State private var cacheSize: Int64 = 0
+    @State private var accessibilityTrusted = AutoPaste.isTrusted
 
     var body: some View {
         Form {
@@ -32,6 +33,30 @@ struct SettingsView: View {
                     ForEach(CopyMode.allCases) { Text($0.label).tag($0) }
                 }
                 Toggle("Close window after copying", isOn: $settings.closeAfterCopy)
+                Picker("Insert shortcut", selection: $settings.pasteHotkey) {
+                    Text("Off").tag(Hotkey?.none)
+                    ForEach(Hotkey.pastePresets, id: \.name) { Text($0.name).tag(Hotkey?.some($0.hotkey)) }
+                }
+                .onChange(of: settings.pasteHotkey) {
+                    // Asking here surfaces the system prompt as the user opts
+                    // in, rather than mid-paste later on.
+                    if settings.pasteHotkey != nil { accessibilityTrusted = AutoPaste.requestTrust() }
+                }
+                Text("Opens the panel in insert mode: your pick is pasted straight into the field you were typing in. The menu bar icon and \(settings.hotkey.displayName) always just copy.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if settings.pasteHotkey != nil && !accessibilityTrusted {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Yaga needs Accessibility access to press ⌘V for you.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open…") { AutoPaste.openPrivacySettings() }
+                            .controlSize(.small)
+                    }
+                }
             }
 
             Section("Storage") {
@@ -66,6 +91,14 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { cacheSize = await GifCache.shared.diskSize() }
+        // The permission is granted in System Settings, with no notification
+        // back to us, so watch for it while this page is open.
+        .task {
+            while !Task.isCancelled {
+                accessibilityTrusted = AutoPaste.isTrusted
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
     }
 
     private var hotkeyBinding: Binding<Hotkey> {

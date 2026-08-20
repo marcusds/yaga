@@ -6,11 +6,16 @@ import Carbon.HIToolbox
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
-    var onTrigger: (() -> Void)?
+    /// Fires with `paste: true` when the panel was summoned by the paste
+    /// shortcut, which inserts the pick instead of only copying it.
+    var onTrigger: ((_ paste: Bool) -> Void)?
 
     private var hotKeyRef: EventHotKeyRef?
+    private var pasteHotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
     private let signature: OSType = 0x47494641 // 'GIFA'
+    private static let openID: UInt32 = 1
+    private static let pasteID: UInt32 = 2
 
     private init() {}
 
@@ -24,9 +29,27 @@ final class HotkeyManager {
             UnregisterEventHotKey(existing)
             hotKeyRef = nil
         }
+        if let existing = pasteHotKeyRef {
+            UnregisterEventHotKey(existing)
+            pasteHotKeyRef = nil
+        }
+
         let hotkey = Settings.shared.hotkey
-        let id = EventHotKeyID(signature: signature, id: 1)
-        RegisterEventHotKey(hotkey.keyCode, hotkey.modifiers, id, GetEventDispatcherTarget(), 0, &hotKeyRef)
+        RegisterEventHotKey(
+            hotkey.keyCode, hotkey.modifiers,
+            EventHotKeyID(signature: signature, id: Self.openID),
+            GetEventDispatcherTarget(), 0, &hotKeyRef
+        )
+
+        // A paste shortcut equal to the open shortcut would register second and
+        // never fire; treat that as "off" rather than silently shadowing.
+        if let paste = Settings.shared.pasteHotkey, paste != hotkey {
+            RegisterEventHotKey(
+                paste.keyCode, paste.modifiers,
+                EventHotKeyID(signature: signature, id: Self.pasteID),
+                GetEventDispatcherTarget(), 0, &pasteHotKeyRef
+            )
+        }
     }
 
     private func installHandlerIfNeeded() {
@@ -34,8 +57,14 @@ final class HotkeyManager {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(
             GetEventDispatcherTarget(),
-            { _, _, _ in
-                DispatchQueue.main.async { HotkeyManager.shared.onTrigger?() }
+            { _, event, _ in
+                var id = EventHotKeyID()
+                GetEventParameter(
+                    event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                    nil, MemoryLayout<EventHotKeyID>.size, nil, &id
+                )
+                let paste = id.id == HotkeyManager.pasteID
+                DispatchQueue.main.async { HotkeyManager.shared.onTrigger?(paste) }
                 return noErr
             },
             1, &spec, nil, &handlerRef

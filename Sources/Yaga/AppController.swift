@@ -16,6 +16,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// Set by the settings page. While it is up, an outside click must not
     /// dismiss the popover — the user is often in another app copying a key.
     var isShowingSettings = false
+    /// The app that was frontmost when the panel opened. Auto-paste hands
+    /// focus back here before pressing ⌘V.
+    private(set) var previousApp: NSRunningApplication?
+    /// True when the panel was opened by the paste shortcut. Clicking the menu
+    /// bar icon always opens in plain copy mode.
+    private(set) var isPasteMode = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -23,7 +29,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         setUpStatusItem()
         setUpPopover()
 
-        HotkeyManager.shared.onTrigger = { [weak self] in self?.togglePopover() }
+        HotkeyManager.shared.onTrigger = { [weak self] paste in self?.togglePopover(paste: paste) }
         HotkeyManager.shared.start()
         installKeyHandling()
         startCacheReaper()
@@ -127,6 +133,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func installKeyHandling() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+
+            // Arrow keys, Return/Space and the 1–9 picks belong to the panel
+            // before the search field sees them.
+            if self.popover.isShown, !self.isShowingSettings, KeyNav.shared.handle(event) {
+                return nil
+            }
+
             let command = event.modifierFlags.contains(.command)
             switch (event.keyCode, command, event.charactersIgnoringModifiers) {
             case (53, _, _) where self.isShowingSettings:
@@ -188,12 +201,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    func togglePopover() {
-        popover.isShown ? closePopover() : showPopover()
+    func togglePopover(paste: Bool = false) {
+        if popover.isShown {
+            // Already up in the other mode: switch rather than close, so a
+            // stray shortcut does not just dismiss the panel.
+            if paste != isPasteMode {
+                isPasteMode = paste
+                NotificationCenter.default.post(
+                    name: .popoverDidOpen, object: nil, userInfo: ["paste": paste]
+                )
+            } else {
+                closePopover()
+            }
+        } else {
+            showPopover(paste: paste)
+        }
     }
 
-    func showPopover() {
+    func showPopover(paste: Bool = false) {
         guard let button = statusItem.button else { return }
+        isPasteMode = paste
+        let front = NSWorkspace.shared.frontmostApplication
+        if front?.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousApp = front
+        }
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if let window = popover.contentViewController?.view.window {
@@ -202,17 +233,27 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             window.hidesOnDeactivate = false
             window.makeKey()
         }
-        NotificationCenter.default.post(name: .popoverDidOpen, object: nil)
+        NotificationCenter.default.post(name: .popoverDidOpen, object: nil, userInfo: ["paste": paste])
         startWatchingForDeactivation()
     }
 
     func closePopover() {
         isShowingSettings = false
+        isPasteMode = false
         NotificationCenter.default.post(name: .dismissSettingsPage, object: nil)
         popover.performClose(nil)
         stopWatchingForDeactivation()
         // Hand focus back to whatever app the user was typing in.
         NSApp.hide(nil)
+    }
+
+    /// Closes the panel and pastes into the field the user came from.
+    /// Returns false if the Accessibility permission is missing, in which case
+    /// the GIF is still on the pasteboard for a manual ⌘V.
+    func closeAndPaste() async -> Bool {
+        let target = previousApp
+        closePopover()
+        return await AutoPaste.paste(into: target)
     }
 
     /// Dismiss on app deactivation rather than by watching for stray clicks.

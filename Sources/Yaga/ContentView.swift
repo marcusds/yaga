@@ -98,9 +98,12 @@ struct ContentView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: Settings
     @StateObject private var model = GifSearchModel()
+    @StateObject private var nav = KeyNav.shared
     @FocusState private var searchFocused: Bool
     @State private var toast: String?
     @State private var showingSettings = false
+    /// Set when the panel was summoned by the paste shortcut.
+    @State private var pasteMode = false
     /// Magnification at the last column change, so one long pinch can step
     /// through several sizes.
     @State private var pinchAnchor: CGFloat = 1
@@ -141,8 +144,23 @@ struct ContentView: View {
         .onAppear {
             searchFocused = true
             model.refreshOnOpen()
+            nav.onActivate = { index in
+                let items = displayItems
+                guard items.indices.contains(index) else { return }
+                copy(items[index])
+            }
+            nav.onShelfStep = { delta in
+                let all = Shelf.allCases
+                guard let current = all.firstIndex(of: model.shelf) else { return }
+                let next = min(max(current + delta, 0), all.count - 1)
+                guard next != current else { return }
+                model.shelf = all[next]
+                model.shelfChanged()
+            }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .popoverDidOpen)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .popoverDidOpen)) { note in
+            pasteMode = note.userInfo?["paste"] as? Bool ?? false
+            nav.reset()
             guard !showingSettings else { return }
             searchFocused = true
             model.refreshOnOpen()
@@ -160,6 +178,8 @@ struct ContentView: View {
             if !showingSettings { searchFocused = true }
         }
         .onChange(of: settings.provider) { model.providerChanged() }
+        .onChange(of: model.query) { nav.queryDidChange() }
+        .onChange(of: model.shelf) { nav.clampSelection() }
         .overlay(alignment: .bottom) { toastView }
     }
 
@@ -211,6 +231,11 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .onChange(of: model.shelf) { model.shelfChanged() }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(nav.zone == .shelf ? Color.accentColor : .clear, lineWidth: 2)
+                        .padding(-2)
+                )
             }
         }
         .padding(10)
@@ -220,26 +245,70 @@ struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        let items = model.visibleItems(library: library)
+        let items = displayItems
+        let _ = syncNav(count: items.count)
         ZStack {
             if items.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
-                        ForEach(items) { item in
-                            GifCell(item: item, width: cellWidth, onCopy: { copy($0) })
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                GifCell(
+                                    item: item,
+                                    width: cellWidth,
+                                    isSelected: nav.zone == .grid && nav.selection == index,
+                                    badge: index < 9 && nav.zone != .grid ? index + 1 : nil,
+                                    onCopy: { copy($0) }
+                                )
+                                .id(item.id)
+                            }
+                        }
+                        .padding(Self.gridPadding)
+                    }
+                    .simultaneousGesture(pinchToZoom)
+                    .onChange(of: nav.selection) {
+                        guard nav.zone == .grid, items.indices.contains(nav.selection) else { return }
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            proxy.scrollTo(items[nav.selection].id, anchor: .center)
                         }
                     }
-                    .padding(Self.gridPadding)
                 }
-                .simultaneousGesture(pinchToZoom)
             }
             if model.isLoading && items.isEmpty {
                 ProgressView().controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The favourites you use most, pinned to the top of the grid so the same
+    /// GIFs sit under 1/2/3 every time the panel opens. Skipped on the
+    /// Favourites shelf, where they would only be duplicated.
+    private var pinnedFavourites: [GifItem] {
+        guard model.query.trimmingCharacters(in: .whitespaces).isEmpty,
+              model.shelf != .favourites
+        else { return [] }
+        return library.topFavourites(limit: settings.gridColumns)
+    }
+
+    /// What the grid actually renders: the pinned row, then the shelf with any
+    /// duplicates of it removed.
+    private var displayItems: [GifItem] {
+        let pinned = pinnedFavourites
+        guard !pinned.isEmpty else { return model.visibleItems(library: library) }
+        let pinnedIDs = Set(pinned.map(\.id))
+        return pinned + model.visibleItems(library: library).filter { !pinnedIDs.contains($0.id) }
+    }
+
+    /// Keeps the keyboard model's picture of the grid current. Called from the
+    /// view body so it cannot drift out of step with what is on screen.
+    private func syncNav(count: Int) {
+        nav.itemCount = count
+        nav.columns = settings.gridColumns
+        nav.hasShelfBar = model.query.trimmingCharacters(in: .whitespaces).isEmpty
+        nav.queryIsEmpty = nav.hasShelfBar
     }
 
     /// Pinching in shows fewer, larger GIFs; pinching out shows more.
@@ -295,7 +364,8 @@ struct ContentView: View {
     private var footer: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Click to copy · drag to insert")
+                Text(pasteMode ? "↵ or 1–9 to insert · drag to insert"
+                                : "↵ or 1–9 to copy · drag to insert")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 // Both providers' terms ask for visible attribution.
@@ -347,6 +417,19 @@ struct ContentView: View {
                 let file = try await GifCache.shared.fileOnDisk(for: item)
                 let data = try await GifCache.shared.data(for: item.gifURL)
                 Clipboard.copy(item: item, data: data, file: file, mode: settings.copyMode)
+
+                if pasteMode {
+                    guard AutoPaste.isTrusted else {
+                        show(toast: "Needs Accessibility access — ⌘V to paste")
+                        return
+                    }
+                    show(toast: "Pasting…")
+                    if await AppController.shared.closeAndPaste() { return }
+                    // Permission was revoked between the check and the paste.
+                    show(toast: "GIF copied — ⌘V to paste")
+                    return
+                }
+
                 show(toast: settings.copyMode == .gif ? "GIF copied — ⌘V to paste" : "Link copied")
                 if settings.closeAfterCopy {
                     try? await Task.sleep(nanoseconds: 450_000_000)
@@ -382,6 +465,9 @@ struct ContentView: View {
 struct GifCell: View {
     let item: GifItem
     let width: CGFloat
+    var isSelected = false
+    /// The 1–9 key that picks this cell, shown until the arrow keys take over.
+    var badge: Int?
     let onCopy: (GifItem) -> Void
 
     @EnvironmentObject private var library: Library
@@ -406,6 +492,16 @@ struct GifCell: View {
             } else {
                 ProgressView().controlSize(.small)
             }
+            if let badge {
+                Text("\(badge)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(5)
+            }
             if library.isFavourite(item) {
                 Image(systemName: "star.fill")
                     .font(.system(size: 10))
@@ -418,7 +514,8 @@ struct GifCell: View {
         .frame(height: height)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(hovering ? Color.accentColor : Color.clear, lineWidth: 2)
+                .strokeBorder(hovering || isSelected ? Color.accentColor : Color.clear,
+                              lineWidth: isSelected ? 3 : 2)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onHover { hovering = $0 }

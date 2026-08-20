@@ -7,7 +7,11 @@ if CommandLine.arguments.contains("--self-test") {
         passed = await SelfTest.run()
         done.signal()
     }
-    done.wait()
+    // Pump the run loop rather than blocking outright: parts of the suite are
+    // main-actor isolated, and a blocked main thread would deadlock them.
+    while done.wait(timeout: .now()) == .timedOut {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+    }
     exit(passed ? 0 : 1)
 }
 
