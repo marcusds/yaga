@@ -101,10 +101,36 @@ enum SelfTest {
 
         checkKeyStore(check)
         checkVersionCompare(check)
+        await checkMenuBarGeometry(check)
         await checkKeyboardNav(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
+    }
+
+    /// The panel closes on any click outside it, and the menu bar is the one
+    /// region that closes it even while settings are open -- so misjudging
+    /// where that strip ends would either miss clicks or swallow the screen.
+    @MainActor
+    private static func checkMenuBarGeometry(_ check: (String, Bool) -> Void) {
+        let screen = NSRect(x: 0, y: 0, width: 1512, height: 982)
+        // A notched display: the menu bar is far taller than the usual 24.
+        let notched = NSRect(x: 0, y: 0, width: 1512, height: 982 - 37)
+        let plain = NSRect(x: 0, y: 0, width: 1512, height: 982 - 25)
+
+        func inBar(_ y: CGFloat, _ visible: NSRect) -> Bool {
+            AppController.menuBarContains(NSPoint(x: 700, y: y), frame: screen, visibleFrame: visible)
+        }
+
+        check("a click in the menu bar counts", inBar(975, plain))
+        check("a click just below it does not", !inBar(950, plain))
+        check("the notch's taller bar is measured, not assumed", inBar(950, notched))
+        check("the content area is never the menu bar", !inBar(500, plain) && !inBar(500, notched))
+
+        // A secondary display reports no menu bar at all; treating the whole
+        // screen as the strip would close the panel on any click.
+        check("a screen with no menu bar falls back to the status bar height",
+              inBar(981, screen) && !inBar(900, screen))
     }
 
     /// Version numbers are compared component-wise; a string comparison gets

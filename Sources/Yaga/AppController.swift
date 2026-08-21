@@ -8,9 +8,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
-    /// Closes the popover when the user moves to another app. A transient
-    /// popover would close mid-drag, so dismissal is managed here instead.
-    private var resignObserver: Any?
+    /// Closes the popover on a click outside it. A transient popover would
+    /// close mid-drag, so dismissal is managed here instead.
+    private var outsideClickMonitor: Any?
     private var keyMonitor: Any?
     private var reaperTimer: Timer?
     /// Set by the settings page. While it is up, an outside click must not
@@ -238,7 +238,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             window.makeKey()
         }
         NotificationCenter.default.post(name: .popoverDidOpen, object: nil, userInfo: ["paste": paste])
-        startWatchingForDeactivation()
+        startWatchingForOutsideClicks()
     }
 
     func closePopover() {
@@ -246,7 +246,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         isPasteMode = false
         NotificationCenter.default.post(name: .dismissSettingsPage, object: nil)
         popover.performClose(nil)
-        stopWatchingForDeactivation()
+        stopWatchingForOutsideClicks()
         // Hand focus back to whatever app the user was typing in.
         NSApp.hide(nil)
     }
@@ -260,32 +260,71 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         return await AutoPaste.paste(into: target)
     }
 
-    /// Dismiss on app deactivation rather than by watching for stray clicks.
-    /// A global click monitor also fires for clicks AppKit routes outside the
-    /// normal dispatch path — segmented controls and menu tracking among them —
-    /// which dismissed the panel while the user was still using it. Losing
-    /// active status cannot happen from a click inside our own window.
-    private func startWatchingForDeactivation() {
-        stopWatchingForDeactivation()
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
+    private func stopWatchingForOutsideClicks() {
+        if let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
+    }
+
+    /// Dismiss on a click anywhere outside the panel, the way a menu does.
+    ///
+    /// Two things make this safe where an earlier outside-click monitor was
+    /// not. A *global* monitor only sees events delivered to other
+    /// applications, so clicks inside our own panel never reach it; and the
+    /// panel's own frame is checked anyway, for the clicks AppKit routes
+    /// outside the normal dispatch path -- segmented controls and menu
+    /// tracking among them -- which is what dismissed the panel mid-use
+    /// before.
+    ///
+    /// Only mouse-down is watched. Dragging a GIF out presses inside the panel
+    /// and releases elsewhere, and closing on that release is exactly what
+    /// made a transient popover unusable.
+    private func startWatchingForOutsideClicks() {
+        stopWatchingForOutsideClicks()
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
         ) { _ in
             Task { @MainActor in
-                let controller = AppController.shared
-                // Settings stay put: the user may be off copying an API key.
-                guard controller.popover.isShown, !controller.isShowingSettings else { return }
-                controller.closePopover()
+                AppController.shared.handleOutsideClick(at: NSEvent.mouseLocation)
             }
         }
     }
 
-    private func stopWatchingForDeactivation() {
-        if let observer = resignObserver {
-            NotificationCenter.default.removeObserver(observer)
-            resignObserver = nil
-        }
+    private func handleOutsideClick(at point: NSPoint) {
+        guard popover.isShown else { return }
+
+        // Our own icon toggles the panel; closing here would race that.
+        if let button = statusItem.button, let window = button.window,
+           window.convertToScreen(button.frame).contains(point) { return }
+
+        if let panel = popover.contentViewController?.view.window,
+           panel.frame.contains(point) { return }
+
+        // The settings page survives an app switch on purpose -- the user is
+        // often off in a browser copying an API key -- but reaching for the
+        // menu bar is unambiguous.
+        if isShowingSettings, !Self.isInMenuBar(point) { return }
+
+        closePopover()
+    }
+
+    /// True when a screen point falls in the menu bar strip.
+    static func isInMenuBar(_ point: NSPoint) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main
+        else { return false }
+        return menuBarContains(point, frame: screen.frame, visibleFrame: screen.visibleFrame)
+    }
+
+    /// The strip's height is measured from the screen rather than assumed: a
+    /// notch makes it taller than the usual 24 points. A secondary display
+    /// with no menu bar reports no difference at all, so fall back to the
+    /// status bar's own thickness rather than treating the whole screen as
+    /// menu bar.
+    nonisolated static func menuBarContains(_ point: NSPoint, frame: NSRect, visibleFrame: NSRect) -> Bool {
+        let measured = frame.maxY - visibleFrame.maxY
+        let height = measured > 0 ? measured : NSStatusBar.system.thickness
+        return point.y >= frame.maxY - height
     }
 
     func applicationWillTerminate(_ notification: Notification) {
