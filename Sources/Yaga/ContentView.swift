@@ -283,12 +283,13 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// The favourites you use most, pinned to the top of the grid so the same
-    /// GIFs sit under 1/2/3 every time the panel opens. Skipped on the
-    /// Favourites shelf, where they would only be duplicated.
+    /// The favourites you use most, pinned to the top of the Recent shelf so
+    /// the same GIFs sit under 1/2/3 every time the panel opens. Only Recent:
+    /// the other shelves each have a job, and prepending favourites to them
+    /// would answer a question the user did not ask.
     private var pinnedFavourites: [GifItem] {
         guard model.query.trimmingCharacters(in: .whitespaces).isEmpty,
-              model.shelf != .favourites
+              model.shelf == .recent
         else { return [] }
         return library.topFavourites(limit: settings.gridColumns)
     }
