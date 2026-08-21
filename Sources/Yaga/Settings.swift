@@ -70,17 +70,12 @@ final class Settings: ObservableObject {
     private let defaults = UserDefaults.standard
     private init() {}
 
-    /// Reads an API key from the Keychain, migrating it out of the preferences
-    /// plist on first run of a build that has Keychain storage.
+    /// Keys are read from `KeyStore` only. Older builds kept them in the
+    /// Keychain, which is deliberately not consulted: its per-signature
+    /// prompts were the reason for moving, and a migration read would put one
+    /// up on every machine. Enter the key again instead.
     private static func loadKey(_ account: String) -> String {
-        if let stored = Keychain.load(account) { return stored }
-        let defaults = UserDefaults.standard
-        if let legacy = defaults.string(forKey: account), !legacy.isEmpty {
-            Keychain.save(legacy, for: account)
-            defaults.removeObject(forKey: account)
-            return legacy
-        }
-        return ""
+        KeyStore.shared.load(account) ?? ""
     }
 
     @Published var provider: ProviderKind = ProviderKind(rawValue: UserDefaults.standard.string(forKey: "provider") ?? "") ?? .giphy {
@@ -88,11 +83,11 @@ final class Settings: ObservableObject {
     }
 
     @Published var giphyKey: String = Settings.loadKey("giphyKey") {
-        didSet { Keychain.save(giphyKey, for: "giphyKey") }
+        didSet { KeyStore.shared.save(giphyKey, for: "giphyKey") }
     }
 
     @Published var klipyKey: String = Settings.loadKey("klipyKey") {
-        didSet { Keychain.save(klipyKey, for: "klipyKey") }
+        didSet { KeyStore.shared.save(klipyKey, for: "klipyKey") }
     }
 
     /// A stable anonymous id. KLIPY uses it for per-user recents and share

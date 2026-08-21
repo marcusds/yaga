@@ -99,10 +99,39 @@ enum SelfTest {
         check("recent but rarely used is not protected",
               !Library.isProtected(entry(uses: 2, favourite: false, used: now), now: now))
 
+        checkKeyStore(check)
         await checkKeyboardNav(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
+    }
+
+    /// API keys sit in a plain file now, so the file mode is the only thing
+    /// keeping them off other users on the machine.
+    private static func checkKeyStore(_ check: (String, Bool) -> Void) {
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("yaga-keys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let store = KeyStore(directory: scratch)
+
+        check("missing key reads as nil", store.load("giphyKey") == nil)
+        store.save("abc123", for: "giphyKey")
+        check("key round-trips", store.load("giphyKey") == "abc123")
+
+        store.save("def456", for: "klipyKey")
+        check("keys do not clobber each other",
+              store.load("giphyKey") == "abc123" && store.load("klipyKey") == "def456")
+
+        store.save("", for: "giphyKey")
+        check("clearing a key removes it",
+              store.load("giphyKey") == nil && store.load("klipyKey") == "def456")
+
+        let file = scratch.appendingPathComponent("keys.json")
+        let mode = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.posixPermissions] as? Int
+        check("key file is owner-only after rewrites", mode == 0o600)
+
+        let dirMode = (try? FileManager.default.attributesOfItem(atPath: scratch.path))?[.posixPermissions] as? Int
+        check("key directory is owner-only", dirMode == 0o700)
     }
 
     /// Grid arithmetic is easy to get subtly wrong at the edges — the last row

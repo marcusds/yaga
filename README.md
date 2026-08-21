@@ -14,17 +14,20 @@ Yaga --self-test         # exercise the cache
 
 Needs the Swift toolchain (Xcode or Command Line Tools).
 
-Ad-hoc signing changes the signature every build, so macOS re-prompts for
-Keychain access each time. To stop that, make a self-signed **Code Signing**
-certificate named `Yaga Dev` (Keychain Access → Certificate Assistant → Create
-a Certificate → Self Signed Root) and `build.sh` will pick it up, or set
-`SIGN_IDENTITY` to any identity you have.
+Ad-hoc signing changes the signature every build, so macOS re-asks for the
+Accessibility permission that insert mode needs. To stop that, make a
+self-signed **Code Signing** certificate named `Yaga Dev` (Keychain Access →
+Certificate Assistant → Create a Certificate → Self Signed Root) and `build.sh`
+will pick it up, or set `SIGN_IDENTITY` to any identity you have.
 
 ## First run
 
 Press **⌘,** and paste a free API key — [GIPHY](https://developers.giphy.com/dashboard/)
 or [KLIPY](https://partner.klipy.com/api-keys). Both cap new keys at 100 calls
-an hour. Keys live in the Keychain.
+an hour. Keys are stored in `~/Library/Application Support/Yaga/keys.json`,
+readable only by your user. Builds before 0.3.0 used the Keychain, whose
+per-signature prompts made every upgrade ask for your login password; keys are
+not carried over, so enter yours once more after upgrading.
 
 ## Notes
 
