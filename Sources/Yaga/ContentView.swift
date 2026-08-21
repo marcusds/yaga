@@ -10,7 +10,7 @@ final class GifSearchModel: ObservableObject {
     @Published var errorMessage: String?
 
     private var searchTask: Task<Void, Never>?
-    private var loadedTrendingFor: ProviderKind?
+    private var hasLoadedTrending = false
 
     /// What the grid should currently show.
     func visibleItems(library: Library) -> [GifItem] {
@@ -38,7 +38,7 @@ final class GifSearchModel: ObservableObject {
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled else { return }
-            await run { try await Settings.shared.currentProvider.search(trimmed, limit: 50) }
+            await run { try await Giphy.search(trimmed, limit: 50) }
         }
     }
 
@@ -47,12 +47,11 @@ final class GifSearchModel: ObservableObject {
     }
 
     func loadTrending(force: Bool) {
-        let provider = Settings.shared.provider
-        guard force || loadedTrendingFor != provider || results.isEmpty else { return }
-        loadedTrendingFor = provider
+        guard force || !hasLoadedTrending || results.isEmpty else { return }
+        hasLoadedTrending = true
         searchTask?.cancel()
         searchTask = Task {
-            await run { try await Settings.shared.currentProvider.trending(limit: 50) }
+            await run { try await Giphy.trending(limit: 50) }
         }
     }
 
@@ -62,17 +61,6 @@ final class GifSearchModel: ObservableObject {
             queryChanged()
         } else if shelf == .trending {
             loadTrending(force: false)
-        }
-    }
-
-    func providerChanged() {
-        loadedTrendingFor = nil
-        results = []
-        errorMessage = nil
-        if query.trimmingCharacters(in: .whitespaces).isEmpty {
-            if shelf == .trending { loadTrending(force: true) }
-        } else {
-            queryChanged()
         }
     }
 
@@ -178,7 +166,6 @@ struct ContentView: View {
             AppController.shared.isShowingSettings = showingSettings
             if !showingSettings { searchFocused = true }
         }
-        .onChange(of: settings.provider) { model.providerChanged() }
         .onChange(of: model.query) { nav.queryDidChange() }
         .onChange(of: model.shelf) { nav.clampSelection() }
         .overlay(alignment: .bottom) { toastView }
@@ -204,7 +191,7 @@ struct ContentView: View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(settings.provider.searchPlaceholder, text: $model.query)
+                TextField(Giphy.searchPlaceholder, text: $model.query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .focused($searchFocused)
@@ -370,8 +357,7 @@ struct ContentView: View {
                                 : "↵ or 1–9 to copy · drag to insert")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                // Both providers' terms ask for visible attribution.
-                Text(settings.provider.attribution)
+                Text(Giphy.attribution)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -430,7 +416,6 @@ struct ContentView: View {
 
     private func copy(_ item: GifItem) {
         library.recordUse(item)
-        reportShare(item)
         Task {
             do {
                 let file = try await GifCache.shared.fileOnDisk(for: item)
@@ -458,16 +443,6 @@ struct ContentView: View {
                 show(toast: "Couldn't copy that GIF")
             }
         }
-    }
-
-    /// KLIPY asks that picks be reported back so its ranking can learn.
-    private func reportShare(_ item: GifItem) {
-        guard item.id.hasPrefix("klipy:") else { return }
-        KlipyProvider.registerShare(
-            slug: String(item.id.dropFirst("klipy:".count)),
-            key: settings.klipyKey,
-            customerID: settings.customerID
-        )
     }
 
     private func show(toast message: String) {

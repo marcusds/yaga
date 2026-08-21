@@ -22,10 +22,10 @@ will pick it up, or set `SIGN_IDENTITY` to any identity you have.
 
 ## First run
 
-Press **⌘,** and paste a free API key — [GIPHY](https://developers.giphy.com/dashboard/)
-or [KLIPY](https://partner.klipy.com/api-keys). Both cap new keys at 100 calls
-an hour. Keys are stored in `~/Library/Application Support/Yaga/keys.json`,
-readable only by your user. Builds before 0.3.0 used the Keychain, whose
+Press **⌘,** and paste a free [GIPHY API key](https://developers.giphy.com/dashboard/).
+New keys are capped at 100 calls an hour. The key is stored in
+`~/Library/Application Support/Yaga/keys.json`, readable only by your user.
+Builds before 0.3.0 used the Keychain, whose
 per-signature prompts made every upgrade ask for your login password; keys are
 not carried over, so enter yours once more after upgrading.
 
@@ -49,8 +49,7 @@ not carried over, so enter yours once more after upgrading.
 - GIF bytes are content-addressed in `~/Library/Caches/Yaga/`; a daily reaper
   expires unused GIFs after 30 days and trims to 500 MB. Favourites are never
   evicted; GIFs used 3+ times are protected while used in the last 6 months.
-- KLIPY's terms forbid retaining their media. That is waived for local
-  development — see `GifCache.honourKlipyRetentionTerms` before shipping.
+- GIPHY is the only source.
 - Copied to another Mac, the app is ad-hoc signed and Gatekeeper will block it
   if the transfer sets a quarantine flag. `rsync`/`scp`/USB do not; AirDrop,
   email and browser downloads do. To clear it:

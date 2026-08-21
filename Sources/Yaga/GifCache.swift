@@ -30,16 +30,8 @@ actor GifCache {
         }
     }
 
-    /// KLIPY's integration terms forbid storing or mirroring their media
-    /// without written approval, which would mean caching their GIFs in memory
-    /// only. Disabled while this is a local development build: flip to `true`
-    /// (or get approval from developers@klipy.com) before shipping.
-    static let honourKlipyRetentionTerms = false
-
     private let blobs: URL
-    /// Media we may not keep between launches; wiped on launch and on quit.
-    private let session: URL
-    /// Friendly-named hard links into `blobs`. Derived, so also wiped on launch.
+    /// Friendly-named hard links into `blobs`. Derived, so wiped on launch and on quit.
     private let links: URL
 
     private var inFlight: [URL: Task<Data, Error>] = [:]
@@ -49,12 +41,11 @@ actor GifCache {
         let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Yaga", isDirectory: true)
         blobs = root.appendingPathComponent("blobs", isDirectory: true)
-        session = root.appendingPathComponent("session", isDirectory: true)
         links = root.appendingPathComponent("named", isDirectory: true)
 
         let manager = FileManager.default
-        for path in [session, links] { try? manager.removeItem(at: path) }
-        for path in [blobs, session, links] {
+        try? manager.removeItem(at: links)
+        for path in [blobs, links] {
             try? manager.createDirectory(at: path, withIntermediateDirectories: true)
         }
         memory.totalCostLimit = 256 * 1024 * 1024
@@ -71,7 +62,7 @@ actor GifCache {
     func data(for url: URL) async throws -> Data {
         if let cached = memory.object(forKey: url as NSURL) { return cached as Data }
 
-        let file = Self.blobURL(for: url, blobs: blobs, session: session)
+        let file = Self.blobURL(for: url, blobs: blobs)
         if let onDisk = try? Data(contentsOf: file) {
             memory.setObject(onDisk as NSData, forKey: url as NSURL, cost: onDisk.count)
             touch(file)
@@ -100,7 +91,7 @@ actor GifCache {
     func fileOnDisk(for item: GifItem) async throws -> URL {
         _ = try await data(for: item.gifURL)
 
-        let blob = Self.blobURL(for: item.gifURL, blobs: blobs, session: session)
+        let blob = Self.blobURL(for: item.gifURL, blobs: blobs)
         let link = Self.linkURL(for: item, in: links)
         let manager = FileManager.default
         // Relink unconditionally: an evicted-and-refetched blob is a new inode.
@@ -190,15 +181,15 @@ actor GifCache {
     func clear() {
         memory.removeAllObjects()
         let manager = FileManager.default
-        for path in [blobs, session, links] {
+        for path in [blobs, links] {
             try? manager.removeItem(at: path)
             try? manager.createDirectory(at: path, withIntermediateDirectories: true)
         }
     }
 
-    /// Called on quit so no session-only media outlives the run.
-    nonisolated func clearSessionFiles() {
-        try? FileManager.default.removeItem(at: session)
+    /// Called on quit. The named links are derived from `blobs`, so dropping
+    /// them costs nothing and leaves no loose filenames behind.
+    nonisolated func clearNamedLinks() {
         try? FileManager.default.removeItem(at: links)
     }
 
@@ -206,10 +197,8 @@ actor GifCache {
     /// so counting the blobs alone is the true figure.
     func diskSize() -> Int64 {
         let manager = FileManager.default
-        return [blobs, session].reduce(into: Int64(0)) { total, directory in
-            let files = (try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])) ?? []
-            total += files.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
-        }
+        let files = (try? manager.contentsOfDirectory(at: blobs, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        return files.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
     }
 
     // MARK: - Naming
@@ -221,13 +210,8 @@ actor GifCache {
         return digest.map { String(format: "%02x", $0) }.joined().prefix(20).description
     }
 
-    private nonisolated static func isEphemeral(_ url: URL) -> Bool {
-        honourKlipyRetentionTerms && (url.host ?? "").hasSuffix("klipy.com")
-    }
-
-    private nonisolated static func blobURL(for url: URL, blobs: URL, session: URL) -> URL {
-        (isEphemeral(url) ? session : blobs)
-            .appendingPathComponent(key(for: url) + ".gif")
+    private nonisolated static func blobURL(for url: URL, blobs: URL) -> URL {
+        blobs.appendingPathComponent(key(for: url) + ".gif")
     }
 
     private nonisolated static func linkURL(for item: GifItem, in links: URL) -> URL {

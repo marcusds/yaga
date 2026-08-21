@@ -328,7 +328,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        GifCache.shared.clearSessionFiles()
+        GifCache.shared.clearNamedLinks()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {

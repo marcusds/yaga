@@ -11,14 +11,10 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("GIF Source") {
-                Picker("Provider", selection: $settings.provider) {
-                    ForEach(ProviderKind.allCases) { Text($0.label).tag($0) }
-                }
                 SecureField("GIPHY API key", text: $settings.giphyKey)
-                SecureField("KLIPY app key", text: $settings.klipyKey)
                 HStack {
                     Spacer()
-                    Link("Get a free \(settings.provider.label) key", destination: settings.provider.keyURL)
+                    Link("Get a free \(Giphy.label) key", destination: Giphy.keyURL)
                         .font(.caption)
                 }
                 Picker("Content filter", selection: $settings.contentFilter) {

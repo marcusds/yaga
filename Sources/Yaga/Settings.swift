@@ -12,9 +12,6 @@ enum ContentFilter: String, CaseIterable, Identifiable, Codable {
         case .off: return "Off (R)"
         }
     }
-    /// KLIPY uses these names verbatim.
-    var klipyValue: String { rawValue }
-
     var giphyValue: String {
         switch self {
         case .high: return "g"
@@ -78,26 +75,9 @@ final class Settings: ObservableObject {
         KeyStore.shared.load(account) ?? ""
     }
 
-    @Published var provider: ProviderKind = ProviderKind(rawValue: UserDefaults.standard.string(forKey: "provider") ?? "") ?? .giphy {
-        didSet { defaults.set(provider.rawValue, forKey: "provider") }
-    }
-
     @Published var giphyKey: String = Settings.loadKey("giphyKey") {
         didSet { KeyStore.shared.save(giphyKey, for: "giphyKey") }
     }
-
-    @Published var klipyKey: String = Settings.loadKey("klipyKey") {
-        didSet { KeyStore.shared.save(klipyKey, for: "klipyKey") }
-    }
-
-    /// A stable anonymous id. KLIPY uses it for per-user recents and share
-    /// signals; it is a random UUID and never leaves this machine otherwise.
-    lazy var customerID: String = {
-        if let existing = defaults.string(forKey: "customerID") { return existing }
-        let fresh = UUID().uuidString
-        defaults.set(fresh, forKey: "customerID")
-        return fresh
-    }()
 
     @Published var contentFilter: ContentFilter = ContentFilter(rawValue: UserDefaults.standard.string(forKey: "contentFilter") ?? "") ?? .medium {
         didSet { defaults.set(contentFilter.rawValue, forKey: "contentFilter") }
@@ -172,16 +152,5 @@ final class Settings: ObservableObject {
             }
             HotkeyManager.shared.reregister()
         }
-    }
-
-    var currentKey: String {
-        switch provider {
-        case .giphy: return giphyKey
-        case .klipy: return klipyKey
-        }
-    }
-
-    var currentProvider: GifProvider {
-        Providers.make(provider, key: currentKey)
     }
 }

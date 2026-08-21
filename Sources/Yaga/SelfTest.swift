@@ -159,13 +159,13 @@ enum SelfTest {
         store.save("abc123", for: "giphyKey")
         check("key round-trips", store.load("giphyKey") == "abc123")
 
-        store.save("def456", for: "klipyKey")
+        store.save("def456", for: "otherKey")
         check("keys do not clobber each other",
-              store.load("giphyKey") == "abc123" && store.load("klipyKey") == "def456")
+              store.load("giphyKey") == "abc123" && store.load("otherKey") == "def456")
 
         store.save("", for: "giphyKey")
         check("clearing a key removes it",
-              store.load("giphyKey") == nil && store.load("klipyKey") == "def456")
+              store.load("giphyKey") == nil && store.load("otherKey") == "def456")
 
         let file = scratch.appendingPathComponent("keys.json")
         let mode = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.posixPermissions] as? Int
