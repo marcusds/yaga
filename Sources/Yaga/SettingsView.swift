@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var library: Library
     @State private var cacheSize: Int64 = 0
     @State private var accessibilityTrusted = AutoPaste.isTrusted
+    @StateObject private var updates = UpdateChecker.shared
 
     var body: some View {
         Form {
@@ -59,6 +60,36 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Updates") {
+                Toggle("Check weekly for updates", isOn: $settings.checkForUpdates)
+                LabeledContent("Version") {
+                    HStack(spacing: 8) {
+                        Text(updates.currentVersion)
+                        if updates.isChecking {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button("Check Now") { Task { await updates.check() } }
+                                .controlSize(.small)
+                        }
+                    }
+                }
+                if updates.updateAvailable, let latest = updates.latestVersion {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(.tint)
+                        Text("\(latest) is available.")
+                            .font(.caption)
+                        Spacer()
+                        Button("Download…") { NSWorkspace.shared.open(updates.releaseURL) }
+                            .controlSize(.small)
+                    }
+                } else {
+                    Text(updateStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Storage") {
                 LabeledContent("Cached GIFs", value: ByteCountFormatter.string(fromByteCount: cacheSize, countStyle: .file))
                 Picker("Keep at most", selection: $settings.cacheLimitMB) {
@@ -99,6 +130,14 @@ struct SettingsView: View {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
+    }
+
+    private var updateStatus: String {
+        if let error = updates.lastError { return "Could not check: \(error)" }
+        guard let checked = updates.lastChecked else { return "Not checked yet." }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Up to date. Checked \(formatter.localizedString(for: checked, relativeTo: Date()))."
     }
 
     private var hotkeyBinding: Binding<Hotkey> {

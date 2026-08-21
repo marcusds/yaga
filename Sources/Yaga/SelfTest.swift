@@ -100,10 +100,25 @@ enum SelfTest {
               !Library.isProtected(entry(uses: 2, favourite: false, used: now), now: now))
 
         checkKeyStore(check)
+        checkVersionCompare(check)
         await checkKeyboardNav(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
+    }
+
+    /// Version numbers are compared component-wise; a string comparison gets
+    /// 0.10.0 versus 0.9.0 backwards, and that is exactly when it would matter.
+    private static func checkVersionCompare(_ check: (String, Bool) -> Void) {
+        let newer = UpdateChecker.isNewer
+        check("a later patch is newer", newer("0.3.1", "0.3.0"))
+        check("a later minor is newer", newer("0.4.0", "0.3.9"))
+        check("double digits beat single", newer("0.10.0", "0.9.0"))
+        check("the same version is not newer", !newer("0.3.0", "0.3.0"))
+        check("an older version is not newer", !newer("0.2.9", "0.3.0"))
+        check("a v prefix is ignored", newer("v0.4.0", "0.3.0") && !newer("v0.3.0", "0.3.0"))
+        check("missing components count as zero", newer("0.4", "0.3.9") && !newer("0.3", "0.3.0"))
+        check("garbage is never newer", !newer("", "0.3.0") && !newer("banana", "0.3.0"))
     }
 
     /// API keys sit in a plain file now, so the file mode is the only thing

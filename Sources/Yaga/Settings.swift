@@ -113,6 +113,12 @@ final class Settings: ObservableObject {
     }
 
 
+    /// Ask GitHub weekly whether a newer release exists. The only network
+    /// call Yaga makes that is not a GIF search, so it can be turned off.
+    @Published var checkForUpdates: Bool = UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true {
+        didSet { defaults.set(checkForUpdates, forKey: "checkForUpdates") }
+    }
+
     /// Columns in the GIF grid. Pinch-to-zoom and ⌘+/⌘- drive this.
     @Published var gridColumns: Int = UserDefaults.standard.object(forKey: "gridColumns") as? Int ?? 3 {
         didSet {

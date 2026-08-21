@@ -36,6 +36,9 @@ not carried over, so enter yours once more after upgrading.
   Space picks. 1–9 pick the first nine GIFs directly — including as the opening
   keystroke in the empty search box, after which digits type normally. Esc walks
   back up, then closes.
+- Checks GitHub weekly for a newer release and shows a dot on the gear icon.
+  Turn it off in Settings → Updates; nothing is downloaded or installed, it
+  only links to the release page.
 - Pinch or ⌘+/⌘- to change grid density.
 - An optional second shortcut (Settings → Behaviour → Insert shortcut, default
   ⌥⌘V) opens the panel in insert mode: your pick is copied, focus returns to the

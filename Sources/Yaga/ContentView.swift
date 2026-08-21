@@ -99,6 +99,7 @@ struct ContentView: View {
     @EnvironmentObject private var settings: Settings
     @StateObject private var model = GifSearchModel()
     @StateObject private var nav = KeyNav.shared
+    @StateObject private var updates = UpdateChecker.shared
     @FocusState private var searchFocused: Bool
     @State private var toast: String?
     @State private var showingSettings = false
@@ -379,9 +380,18 @@ struct ContentView: View {
                 withAnimation(.easeInOut(duration: 0.12)) { showingSettings.toggle() }
             } label: {
                 Image(systemName: showingSettings ? "square.grid.2x2" : "gearshape")
+                    .overlay(alignment: .topTrailing) {
+                        // The only hint an update exists without opening Settings.
+                        if updates.updateAvailable && !showingSettings {
+                            Circle()
+                                .fill(.tint)
+                                .frame(width: 6, height: 6)
+                                .offset(x: 3, y: -2)
+                        }
+                    }
             }
             .buttonStyle(.plain)
-            .help(showingSettings ? "Back to GIFs (⌘,)" : "Settings (⌘,)")
+            .help(updateHelp)
             Button {
                 NSApp.terminate(nil)
             } label: {
@@ -392,6 +402,14 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private var updateHelp: String {
+        if showingSettings { return "Back to GIFs (⌘,)" }
+        if updates.updateAvailable, let latest = updates.latestVersion {
+            return "Yaga \(latest) is available — Settings (⌘,)"
+        }
+        return "Settings (⌘,)"
     }
 
     @ViewBuilder

@@ -33,6 +33,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         HotkeyManager.shared.start()
         installKeyHandling()
         startCacheReaper()
+        UpdateChecker.shared.checkIfDue()
     }
 
     /// An LSUIElement app shows no menu bar, but AppKit still routes command-key
@@ -111,7 +112,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func startCacheReaper() {
         reapCacheIfDue()
         reaperTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
-            Task { @MainActor in AppController.shared.reapCacheIfDue() }
+            Task { @MainActor in
+                AppController.shared.reapCacheIfDue()
+                UpdateChecker.shared.checkIfDue()
+            }
         }
     }
 
