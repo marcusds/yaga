@@ -301,12 +301,27 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if let panel = popover.contentViewController?.view.window,
            panel.frame.contains(point) { return }
 
-        // The settings page survives an app switch on purpose -- the user is
-        // often off in a browser copying an API key -- but reaching for the
-        // menu bar is unambiguous.
-        if isShowingSettings, !Self.isInMenuBar(point) { return }
+        guard Self.outsideClickCloses(
+            isShowingSettings: isShowingSettings,
+            needsAPIKey: Settings.shared.giphyKey.isEmpty,
+            isInMenuBar: Self.isInMenuBar(point)
+        ) else { return }
 
         closePopover()
+    }
+
+    /// Settings normally closes on an outside click like everything else. The
+    /// exception is first-run setup: with no key entered yet the user is off
+    /// in a browser fetching one, and closing the page would take away the
+    /// field they are about to paste into. Reaching for the menu bar is
+    /// unambiguous either way.
+    nonisolated static func outsideClickCloses(
+        isShowingSettings: Bool,
+        needsAPIKey: Bool,
+        isInMenuBar: Bool
+    ) -> Bool {
+        guard isShowingSettings, needsAPIKey, !isInMenuBar else { return true }
+        return false
     }
 
     /// True when a screen point falls in the menu bar strip.

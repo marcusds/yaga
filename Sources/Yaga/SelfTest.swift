@@ -105,6 +105,7 @@ enum SelfTest {
         await checkMenuBarGeometry(check)
         await checkKeyboardNav(check)
         await checkHotkeyNaming(check)
+        checkOutsideClick(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
@@ -175,6 +176,20 @@ enum SelfTest {
 
         let dirMode = (try? FileManager.default.attributesOfItem(atPath: scratch.path))?[.posixPermissions] as? Int
         check("key directory is owner-only", dirMode == 0o700)
+    }
+
+    /// The settings page is the one thing that can outlive an outside click,
+    /// and only while there is no API key to lose the field for.
+    private static func checkOutsideClick(_ check: (String, Bool) -> Void) {
+        func closes(settings: Bool, needsKey: Bool, menuBar: Bool) -> Bool {
+            AppController.outsideClickCloses(
+                isShowingSettings: settings, needsAPIKey: needsKey, isInMenuBar: menuBar
+            )
+        }
+        check("the grid closes on any outside click", closes(settings: false, needsKey: true, menuBar: false))
+        check("settings stays up during first-run setup", !closes(settings: true, needsKey: true, menuBar: false))
+        check("the menu bar closes settings even then", closes(settings: true, needsKey: true, menuBar: true))
+        check("settings closes once a key is entered", closes(settings: true, needsKey: false, menuBar: false))
     }
 
     /// Recorded shortcuts can be anything, so both the name we show and the
