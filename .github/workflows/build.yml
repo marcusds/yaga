@@ -47,13 +47,13 @@ jobs:
           Apple silicon build, signed ad-hoc — Gatekeeper does not recognise it.
 
           ```sh
-          ditto -x -k Yaga-@VERSION@-arm64.zip /Applications
+          unzip -o Yaga-@VERSION@-arm64.zip -d /Applications
           xattr -dr com.apple.quarantine /Applications/Yaga.app
           open /Applications/Yaga.app
           ```
 
-          Quit Yaga first if it is running. `ditto` overwrites in place, so
-          upgrades need no extra steps.
+          Quit Yaga first if it is running. `-o` overwrites, so upgrading
+          needs no extra steps.
 
           Without that: System Settings → Privacy & Security → **Open Anyway**.
           Needs a GIPHY or KLIPY API key, entered in Settings (⌘,).
