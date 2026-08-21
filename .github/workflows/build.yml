@@ -14,6 +14,11 @@ jobs:
   build:
     runs-on: macos-15
 
+    # The secrets context is not available in a step-level `if`, so the check
+    # for a configured certificate has to be hoisted to the job.
+    env:
+      HAS_SIGNING_CERT: ${{ secrets.SIGNING_CERT_P12 != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +37,7 @@ jobs:
       # needs would have to be re-given after each upgrade. Absent the secrets
       # this step is skipped and build.sh falls back to ad-hoc as before.
       - name: Import signing certificate
-        if: ${{ secrets.SIGNING_CERT_P12 != '' }}
+        if: env.HAS_SIGNING_CERT == 'true'
         env:
           SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
           SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
