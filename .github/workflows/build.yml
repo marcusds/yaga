@@ -41,23 +41,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Re-tagging is normal during development, so replace an existing
-          # release's assets rather than failing on "release already exists".
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
-            exit 0
-          fi
-          gh release create "$GITHUB_REF_NAME" dist/*.zip \
-            --title "Yaga $GITHUB_REF_NAME" \
-            --notes-file - <<'NOTES'
+          # The heredoc stays quoted so the fenced block's backticks are not
+          # taken as command substitution; the version is filled in after.
+          cat > notes.md <<'NOTES'
           Apple silicon build, signed ad-hoc — Gatekeeper does not recognise it.
 
           ```sh
-          unzip Yaga-*-arm64.zip -d /Applications
+          ditto -x -k Yaga-@VERSION@-arm64.zip /Applications
           xattr -dr com.apple.quarantine /Applications/Yaga.app
           open /Applications/Yaga.app
           ```
 
+          Quit Yaga first if it is running. `ditto` overwrites in place, so
+          upgrades need no extra steps.
+
           Without that: System Settings → Privacy & Security → **Open Anyway**.
           Needs a GIPHY or KLIPY API key, entered in Settings (⌘,).
           NOTES
+          sed -i '' "s/@VERSION@/${GITHUB_REF_NAME#v}/" notes.md
+
+          # Re-tagging is normal during development, so refresh an existing
+          # release rather than failing on "release already exists".
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            --title "Yaga $GITHUB_REF_NAME" \
+            --notes-file notes.md
