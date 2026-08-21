@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 
 /// `Yaga --self-test` exercises the cache end to end: naming stability,
@@ -103,6 +104,7 @@ enum SelfTest {
         checkVersionCompare(check)
         await checkMenuBarGeometry(check)
         await checkKeyboardNav(check)
+        await checkHotkeyNaming(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
@@ -173,6 +175,42 @@ enum SelfTest {
 
         let dirMode = (try? FileManager.default.attributesOfItem(atPath: scratch.path))?[.posixPermissions] as? Int
         check("key directory is owner-only", dirMode == 0o700)
+    }
+
+    /// Recorded shortcuts can be anything, so both the name we show and the
+    /// rules that reject a combination need to hold for arbitrary input.
+    @MainActor
+    private static func checkHotkeyNaming(_ check: (String, Bool) -> Void) {
+        let optionCommandG = Hotkey(keyCode: UInt32(kVK_ANSI_G), modifiers: UInt32(cmdKey | optionKey))
+        check("modifiers read in Apple's order", optionCommandG.displayName == "⌥⌘G")
+
+        let all = Hotkey(keyCode: UInt32(kVK_Space),
+                         modifiers: UInt32(cmdKey | optionKey | controlKey | shiftKey))
+        check("every modifier is shown, control first", all.displayName == "⌃⌥⇧⌘Space")
+
+        let arrow = Hotkey(keyCode: UInt32(kVK_LeftArrow), modifiers: UInt32(cmdKey))
+        check("keys without a glyph get a symbol", arrow.displayName == "⌘←")
+
+        // Presets are what the menu offers, so a name we cannot render would
+        // show up there first.
+        for preset in Hotkey.presets + Hotkey.pastePresets {
+            check("preset \(preset.name) renders as itself", preset.hotkey.displayName == preset.name)
+        }
+
+        let shiftOnly = Hotkey(keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(shiftKey))
+        check("shift alone is refused", shiftOnly.problem(against: nil) == .needsModifier)
+        check("bare key is refused", Hotkey(keyCode: UInt32(kVK_ANSI_A), modifiers: 0)
+            .problem(against: nil) == .needsModifier)
+        check("option alone is enough", Hotkey(keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(optionKey))
+            .problem(against: nil) == nil)
+        check("the other shortcut is refused", optionCommandG.problem(against: optionCommandG) == .sameAsOther)
+        check("a free combination is accepted", optionCommandG.problem(against: .pasteDefault) == nil)
+
+        let flags: NSEvent.ModifierFlags = [.command, .shift]
+        check("AppKit flags map to Carbon bits",
+              Hotkey.carbonModifiers(from: flags) == UInt32(cmdKey | shiftKey))
+        check("unrelated flags are dropped",
+              Hotkey.carbonModifiers(from: [.command, .capsLock, .function]) == UInt32(cmdKey))
     }
 
     /// Grid arithmetic is easy to get subtly wrong at the edges — the last row

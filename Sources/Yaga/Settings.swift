@@ -56,8 +56,10 @@ struct Hotkey: Hashable {
         ("⌃⌥⌘Space", Hotkey(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey | cmdKey))),
     ]
 
+    /// Built from the key code rather than looked up in `presets`, so a
+    /// recorded shortcut reads the same way a preset one does.
     var displayName: String {
-        (Hotkey.presets + Hotkey.pastePresets).first { $0.hotkey == self }?.name ?? "Custom"
+        Hotkey.modifierSymbols(modifiers) + Hotkey.keyLabel(keyCode)
     }
 }
 

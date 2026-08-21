@@ -46,6 +46,12 @@ not carried over, so enter yours once more after upgrading.
   shortcut always just copy. Insert mode needs Accessibility access, which macOS
   binds to the app's signature — re-grant it if you rebuild with a different
   identity.
+- Both shortcuts can be set to any combination: open the shortcut's menu in
+  Settings and choose Record Shortcut…, then press the keys you want. The same
+  menu holds a few presets, and Off for the insert shortcut. At least one of ⌘,
+  ⌥ or ⌃ is required, since a shortcut without one would fire while you type.
+  If another app already owns the combination, Settings says so rather than
+  leaving you with a shortcut that quietly does nothing.
 - GIF bytes are content-addressed in `~/Library/Caches/Yaga/`; a daily reaper
   expires unused GIFs after 30 days and trims to 500 MB. Favourites are never
   evicted; GIFs used 3+ times are protected while used in the last 6 months.

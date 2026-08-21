@@ -7,6 +7,9 @@ struct SettingsView: View {
     @State private var cacheSize: Int64 = 0
     @State private var accessibilityTrusted = AutoPaste.isTrusted
     @StateObject private var updates = UpdateChecker.shared
+    @StateObject private var hotkeys = HotkeyManager.shared
+    @State private var hotkeyProblem: String?
+    @State private var recording: Recording?
 
     var body: some View {
         Form {
@@ -23,22 +26,35 @@ struct SettingsView: View {
             }
 
             Section("Behaviour") {
-                Picker("Shortcut", selection: hotkeyBinding) {
-                    ForEach(Hotkey.presets, id: \.name) { Text($0.name).tag($0.hotkey) }
-                }
+                shortcutRow(
+                    "Shortcut",
+                    // The open shortcut cannot be cleared, so a nil write is
+                    // dropped rather than represented.
+                    hotkey: Binding(
+                        get: { settings.hotkey },
+                        set: { if let new = $0 { settings.hotkey = new } }
+                    ),
+                    presets: Hotkey.presets,
+                    conflictsWith: settings.pasteHotkey,
+                    allowsClearing: false
+                )
                 Picker("Clicking a GIF copies", selection: $settings.copyMode) {
                     ForEach(CopyMode.allCases) { Text($0.label).tag($0) }
                 }
                 Toggle("Close window after copying", isOn: $settings.closeAfterCopy)
-                Picker("Insert shortcut", selection: $settings.pasteHotkey) {
-                    Text("Off").tag(Hotkey?.none)
-                    ForEach(Hotkey.pastePresets, id: \.name) { Text($0.name).tag(Hotkey?.some($0.hotkey)) }
-                }
+                shortcutRow(
+                    "Insert shortcut",
+                    hotkey: $settings.pasteHotkey,
+                    presets: Hotkey.pastePresets,
+                    conflictsWith: settings.hotkey,
+                    allowsClearing: true
+                )
                 .onChange(of: settings.pasteHotkey) {
                     // Asking here surfaces the system prompt as the user opts
                     // in, rather than mid-paste later on.
                     if settings.pasteHotkey != nil { accessibilityTrusted = AutoPaste.requestTrust() }
                 }
+                shortcutWarning
                 Text("Opens the panel in insert mode: your pick is pasted straight into the field you were typing in. The menu bar icon and \(settings.hotkey.displayName) always just copy.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -116,6 +132,13 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $recording) { target in
+            ShortcutRecorderSheet(
+                hotkey: target.hotkey,
+                conflictsWith: target.conflictsWith,
+                onFinish: { recording = nil }
+            )
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { cacheSize = await GifCache.shared.diskSize() }
         // The permission is granted in System Settings, with no notification
@@ -136,7 +159,69 @@ struct SettingsView: View {
         return "Up to date. Checked \(formatter.localizedString(for: checked, relativeTo: Date()))."
     }
 
-    private var hotkeyBinding: Binding<Hotkey> {
-        Binding(get: { settings.hotkey }, set: { settings.hotkey = $0 })
+    /// One popup button, so the row lays out exactly like the Picker rows
+    /// around it. Recording moves into a sheet, which also gives the state an
+    /// obvious way out.
+    @ViewBuilder
+    private func shortcutRow(
+        _ label: String,
+        hotkey: Binding<Hotkey?>,
+        presets: [(name: String, hotkey: Hotkey)],
+        conflictsWith: Hotkey?,
+        allowsClearing: Bool
+    ) -> some View {
+        LabeledContent(label) {
+            Menu(hotkey.wrappedValue?.displayName ?? "Off") {
+                ForEach(presets, id: \.name) { preset in
+                    Button(preset.name) {
+                        guard preset.hotkey.problem(against: conflictsWith) == nil else {
+                            hotkeyProblem = Hotkey.Problem.sameAsOther.message
+                            return
+                        }
+                        hotkeyProblem = nil
+                        hotkey.wrappedValue = preset.hotkey
+                    }
+                }
+                Divider()
+                Button("Record Shortcut…") { recording = Recording(hotkey: hotkey, conflictsWith: conflictsWith) }
+                if allowsClearing {
+                    Button("Off") {
+                        hotkeyProblem = nil
+                        hotkey.wrappedValue = nil
+                    }
+                }
+            }
+            .fixedSize()
+        }
+    }
+
+    /// The sheet's subject. Held as one value so presentation and the binding
+    /// it writes back to cannot drift apart.
+    struct Recording: Identifiable {
+        let id = UUID()
+        let hotkey: Binding<Hotkey?>
+        let conflictsWith: Hotkey?
+    }
+
+    /// Shown under both shortcut rows: either what was rejected while
+    /// recording, or a combination the system would not hand over.
+    @ViewBuilder
+    private var shortcutWarning: some View {
+        if let hotkeyProblem {
+            warningRow(hotkeyProblem)
+        } else if let taken = hotkeys.unavailable.first {
+            warningRow("\(taken.displayName) is already used by another app, so it will not open Yaga.")
+        }
+    }
+
+    private func warningRow(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
     }
 }
