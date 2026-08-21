@@ -26,6 +26,35 @@ jobs:
       - name: Cache self-test
         run: .build/release/Yaga --self-test
 
+      # Without this the runner signs ad-hoc, and an ad-hoc signature pins the
+      # designated requirement to that build's cdhash. Every release would then
+      # be a different app to TCC, so the Accessibility grant that insert mode
+      # needs would have to be re-given after each upgrade. Absent the secrets
+      # this step is skipped and build.sh falls back to ad-hoc as before.
+      - name: Import signing certificate
+        if: ${{ secrets.SIGNING_CERT_P12 != '' }}
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN=$RUNNER_TEMP/signing.keychain-db
+          PASSWORD=$(uuidgen)
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          echo "$SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          # codesign would otherwise stop for an interactive "allow access?"
+          # prompt that nobody is there to answer.
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$PASSWORD" "$KEYCHAIN" >/dev/null
+          # build.sh looks the identity up by name, so the keychain only has to
+          # be on the search list.
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | tr -d '\"')
+
       - name: Package app bundle
         run: ./build.sh --dist
 
@@ -44,7 +73,7 @@ jobs:
           # The heredoc stays quoted so the fenced block's backticks are not
           # taken as command substitution; the version is filled in after.
           cat > notes.md <<'NOTES'
-          Apple silicon build, signed ad-hoc — Gatekeeper does not recognise it.
+          Apple silicon build, not notarised — Gatekeeper does not recognise it.
 
           ```sh
           unzip -o Yaga-@VERSION@-arm64.zip -d /Applications
