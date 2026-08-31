@@ -106,9 +106,29 @@ enum SelfTest {
         await checkKeyboardNav(check)
         await checkHotkeyNaming(check)
         checkOutsideClick(check)
+        await checkSearchReset(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
+    }
+
+    /// A pick ends the search, but the field is only cleared on the next open
+    /// -- clearing it any earlier would show through the closing animation.
+    @MainActor
+    private static func checkSearchReset(_ check: (String, Bool) -> Void) {
+        let model = GifSearchModel()
+        model.query = "cats"
+        model.refreshOnOpen()
+        check("an unpicked search survives a reopen", model.query == "cats")
+
+        model.pickDidDismissPanel()
+        check("the field still shows the query while the panel closes", model.query == "cats")
+        model.refreshOnOpen()
+        check("a pick clears the search by the next open", model.query.isEmpty)
+
+        model.query = "dogs"
+        model.refreshOnOpen()
+        check("only the pick that set it clears once", model.query == "dogs")
     }
 
     /// The panel closes on any click outside it, and the menu bar is the one

@@ -11,6 +11,7 @@ final class GifSearchModel: ObservableObject {
 
     private var searchTask: Task<Void, Never>?
     private var hasLoadedTrending = false
+    private var clearQueryOnNextOpen = false
 
     /// What the grid should currently show.
     func visibleItems(library: Library) -> [GifItem] {
@@ -55,8 +56,24 @@ final class GifSearchModel: ObservableObject {
         }
     }
 
+    /// A pick is the end of a search: the panel should come back on the
+    /// shelves rather than on whatever was typed last time. Clearing it at the
+    /// moment of the pick would wipe the field while the panel is still
+    /// animating away, so it waits for the next open instead.
+    func pickDidDismissPanel() {
+        clearQueryOnNextOpen = true
+    }
+
     /// Called when the popover opens, so stale results don't linger.
     func refreshOnOpen() {
+        if clearQueryOnNextOpen {
+            clearQueryOnNextOpen = false
+            if !query.isEmpty {
+                query = ""
+                queryChanged()
+                return
+            }
+        }
         if !query.trimmingCharacters(in: .whitespaces).isEmpty {
             queryChanged()
         } else if shelf == .trending {
@@ -428,6 +445,7 @@ struct ContentView: View {
                         return
                     }
                     show(toast: "Pasting…")
+                    model.pickDidDismissPanel()
                     if await AppController.shared.closeAndPaste() { return }
                     // Permission was revoked between the check and the paste.
                     show(toast: "GIF copied — ⌘V to paste")
@@ -437,6 +455,7 @@ struct ContentView: View {
                 show(toast: settings.copyMode == .gif ? "GIF copied — ⌘V to paste" : "Link copied")
                 if settings.closeAfterCopy {
                     try? await Task.sleep(nanoseconds: 450_000_000)
+                    model.pickDidDismissPanel()
                     AppController.shared.closePopover()
                 }
             } catch {
