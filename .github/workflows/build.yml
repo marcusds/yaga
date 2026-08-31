@@ -21,6 +21,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Release notes are built from the commits since the previous tag,
+          # which needs the history and tags a shallow clone leaves out.
+          fetch-depth: 0
 
       - name: Toolchain
         run: swift --version
@@ -77,7 +81,21 @@ jobs:
         run: |
           # The heredoc stays quoted so the fenced block's backticks are not
           # taken as command substitution; the version is filled in after.
-          cat > notes.md <<'NOTES'
+          # The subjects since the previous tag are the changelog; the
+          # "Version x.y.z" commit is just the bump, so it is left out. On the
+          # first tag there is no predecessor and the section is skipped.
+          PREV=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            git log --no-merges --reverse --format='- %s' "$PREV..$GITHUB_REF_NAME" \
+              | grep -v '^- Version ' > changes.md || true
+          fi
+          if [ -s changes.md ]; then
+            { echo "## What's changed"; echo; cat changes.md; echo; } > notes.md
+          else
+            : > notes.md
+          fi
+
+          cat >> notes.md <<'NOTES'
           Apple silicon build, not notarised — Gatekeeper does not recognise it.
 
           ```sh
