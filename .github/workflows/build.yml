@@ -96,6 +96,8 @@ jobs:
           fi
 
           cat >> notes.md <<'NOTES'
+          ## Install
+
           Apple silicon build, not notarised — Gatekeeper does not recognise it.
 
           ```sh
