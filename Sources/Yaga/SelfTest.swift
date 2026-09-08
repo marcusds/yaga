@@ -107,9 +107,99 @@ enum SelfTest {
         await checkHotkeyNaming(check)
         checkOutsideClick(check)
         await checkSearchReset(check)
+        checkRenditionChoice(check)
+        checkLaunchAtLogin(check)
+        checkScrollZoom(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
+    }
+
+    /// A mouse has no pinch gesture, so ⌘-scroll drives the same zoom. The
+    /// two input kinds arrive on wildly different scales -- a wheel notch is
+    /// whole lines, a trackpad is pixels many times a second -- and spending
+    /// every delta would rocket through the column range on the first flick.
+    private static func checkScrollZoom(_ check: (String, Bool) -> Void) {
+        var zoom = ScrollZoom()
+        check("a wheel notch up is one step out", zoom.steps(for: 1, precise: false) == 1)
+        check("a wheel notch down is one step back", zoom.steps(for: -1, precise: false) == -1)
+        check("three notches at once spend all three", zoom.steps(for: 3, precise: false) == 3)
+
+        zoom.reset()
+        check("a few trackpad pixels are not yet a column", zoom.steps(for: 8, precise: true) == 0)
+        check("the remainder is banked, not dropped", zoom.steps(for: 8, precise: true) == 1)
+        check("a fast trackpad flick spends several", zoom.steps(for: 48, precise: true) == 3)
+
+        zoom.reset()
+        _ = zoom.steps(for: 12, precise: true)
+        zoom.reset()
+        check("closing the panel drops a part-spent scroll",
+              zoom.steps(for: 8, precise: true) == 0)
+
+        var reversing = ScrollZoom()
+        _ = reversing.steps(for: 8, precise: true)
+        check("reversing mid-scroll cancels rather than steps",
+              reversing.steps(for: -8, precise: true) == 0)
+    }
+
+    /// The login item registers the app bundle, so there is nothing to
+    /// register when Yaga runs as a bare binary -- as it does right here.
+    /// Reporting that instead of throwing is what keeps the toggle hidden
+    /// rather than broken.
+    private static func checkLaunchAtLogin(_ check: (String, Bool) -> Void) {
+        check("an unbundled binary has no login item to offer", !LaunchAtLogin.isSupported)
+        check("enabling it there fails with a reason, not a crash",
+              LaunchAtLogin.setEnabled(true) != nil)
+        check("and nothing is left registered", !LaunchAtLogin.isEnabled)
+    }
+
+    /// How big a copied GIF looks in Slack is decided here: it renders an
+    /// upload at the rendition's own pixel width, so picking `fixed_width`
+    /// (always 200px) is what made pasted GIFs tiny.
+    private static func checkRenditionChoice(_ check: (String, Bool) -> Void) {
+        func rendition(_ width: Int, _ bytes: Int) -> [String: Any] {
+            ["url": "https://example.com/\(width)-\(bytes).gif",
+             "width": String(width), "height": String(width), "size": String(bytes)]
+        }
+        func parse(_ images: [String: Any]) -> GifItem? {
+            Giphy.parse(["id": "abc", "title": "GIF", "images": images])
+        }
+        // The ceiling is a user setting; pin it so this does not depend on
+        // whatever is in defaults on this machine.
+        let ceiling = Settings.shared.maxCopyMB
+        Settings.shared.maxCopyMB = 10
+        defer { Settings.shared.maxCopyMB = ceiling }
+
+        let mixed = parse([
+            "original": rendition(480, 2_000_000),
+            "downsized_medium": rendition(320, 900_000),
+            "fixed_width": rendition(200, 300_000),
+        ])
+        check("the widest affordable rendition is copied",
+              mixed?.gifURL.absoluteString.contains("480-") == true)
+        check("the grid still previews the cheap rendition",
+              mixed?.previewURL.absoluteString.contains("200-") == true)
+
+        let heavy = parse([
+            "original": rendition(1000, 40_000_000),
+            "downsized_medium": rendition(400, 9_000_000),
+            "fixed_width": rendition(200, 300_000),
+        ])
+        check("a rendition over the byte ceiling is passed over",
+              heavy?.gifURL.absoluteString.contains("400-") == true)
+
+        let allHeavy = parse(["original": rendition(1000, 40_000_000),
+                              "downsized": rendition(600, 20_000_000)])
+        check("when every rendition is huge the smallest is still copied",
+              allHeavy?.gifURL.absoluteString.contains("600-") == true)
+
+        let sizeless = parse(["original": ["url": "https://example.com/o.gif",
+                                           "width": "500", "height": "500"]])
+        check("a rendition with no size is trusted rather than dropped",
+              sizeless?.gifURL.absoluteString.hasSuffix("/o.gif") == true)
+
+        check("a payload with no usable rendition is skipped",
+              parse(["fixed_height": ["nonsense": true]]) == nil)
     }
 
     /// A pick ends the search, but the field is only cleared on the next open

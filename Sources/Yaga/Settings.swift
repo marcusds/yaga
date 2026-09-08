@@ -95,6 +95,26 @@ final class Settings: ObservableObject {
     }
 
 
+    /// Start Yaga when you log in. The source of truth is the registration
+    /// macOS holds, not this flag: the user can revoke it in System Settings
+    /// without telling us, so it is read back from `SMAppService` at launch
+    /// rather than persisted in defaults.
+    @Published var launchAtLogin: Bool = LaunchAtLogin.isEnabled {
+        didSet {
+            guard oldValue != launchAtLogin else { return }
+            if let problem = LaunchAtLogin.setEnabled(launchAtLogin) {
+                launchAtLoginProblem = problem
+                // Snap the toggle back to what macOS actually has registered.
+                launchAtLogin = LaunchAtLogin.isEnabled
+            } else {
+                launchAtLoginProblem = nil
+            }
+        }
+    }
+
+    /// Why the last login-item change did not take, if it did not.
+    @Published var launchAtLoginProblem: String?
+
     /// Ask GitHub weekly whether a newer release exists. The only network
     /// call Yaga makes that is not a GIF search, so it can be turned off.
     @Published var checkForUpdates: Bool = UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true {
@@ -115,6 +135,15 @@ final class Settings: ObservableObject {
 
     func zoom(by step: Int) {
         gridColumns = min(max(gridColumns - step, Settings.minColumns), Settings.maxColumns)
+    }
+
+    /// Ceiling on the rendition Yaga copies, in megabytes. Chat apps render an
+    /// upload at its own pixel width, so the widest rendition looks best --
+    /// but the bytes are downloaded before the paste fires and then held on
+    /// the pasteboard, so "widest" has to stop somewhere. Raising this trades
+    /// a wait at pick time for a larger GIF.
+    @Published var maxCopyMB: Int = UserDefaults.standard.object(forKey: "maxCopyMB") as? Int ?? 10 {
+        didSet { defaults.set(maxCopyMB, forKey: "maxCopyMB") }
     }
 
     /// Ceiling for cached GIF bytes on disk, in megabytes.

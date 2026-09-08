@@ -39,7 +39,18 @@ not carried over, so enter yours once more after upgrading.
 - Checks GitHub weekly for a newer release and shows a dot on the gear icon.
   Turn it off in Settings → Updates; nothing is downloaded or installed, it
   only links to the release page.
-- Pinch or ⌘+/⌘- to change grid density.
+- Pinch, ⌘-scroll or ⌘+/⌘- to change grid density, from five GIFs a row down
+  to one. ⌘-scroll is there because a mouse cannot pinch.
+- Settings → Behaviour → Open Yaga at login registers the app as a login
+  item. macOS lets you override that in System Settings → General → Login
+  Items, and once you have, the toggle says so rather than flipping back
+  with no explanation.
+- Copying takes the widest rendition GIPHY offers under the size limit in
+  Settings → Storage (10 MB by default), not a fixed one. Slack and other
+  chat apps render an upload at its own pixel width, and GIPHY's
+  `fixed_width` rendition is only 200px across — which is why pasted GIFs
+  used to arrive small. A larger limit means a larger GIF and a longer
+  wait when you pick one.
 - An optional second shortcut (Settings → Behaviour → Insert shortcut, default
   ⌥⌘V) opens the panel in insert mode: your pick is copied, focus returns to the
   app you came from, and ⌘V is pressed for you. The menu bar icon and the main

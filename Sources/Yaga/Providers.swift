@@ -65,28 +65,64 @@ enum Giphy {
         return object
     }
 
-    private static func parse(_ result: [String: Any]) -> GifItem? {
+    /// One GIPHY rendition.
+    private struct Rendition {
+        let url: URL
+        let width: Int
+        let height: Int
+        let bytes: Int
+    }
+
+    /// Ceiling for the copied GIF, from Settings. The bytes are fetched before
+    /// a paste fires and then held on the pasteboard, so the widest rendition
+    /// is not worth having at any size.
+    private static var maxCopyBytes: Int { Settings.shared.maxCopyMB * 1024 * 1024 }
+
+    /// Internal rather than private so `--self-test` can drive it with a
+    /// stubbed payload; nothing else outside this file calls it.
+    static func parse(_ result: [String: Any]) -> GifItem? {
         guard let id = result["id"] as? String,
               let images = result["images"] as? [String: Any]
         else { return nil }
 
-        func media(_ name: String) -> (URL, Int, Int)? {
+        func media(_ name: String) -> Rendition? {
             guard let entry = images[name] as? [String: Any],
                   let string = entry["url"] as? String,
                   let url = URL(string: string)
             else { return nil }
-            return (url, Int(entry["width"] as? String ?? "") ?? 0, Int(entry["height"] as? String ?? "") ?? 0)
+            return Rendition(
+                url: url,
+                width: Int(entry["width"] as? String ?? "") ?? 0,
+                height: Int(entry["height"] as? String ?? "") ?? 0,
+                bytes: Int(entry["size"] as? String ?? "") ?? 0
+            )
         }
 
-        guard let full = media("downsized_medium") ?? media("fixed_width") ?? media("original") else { return nil }
+        // What gets copied decides how big the GIF looks in Slack and friends:
+        // they render an upload at its own pixel width, so a 200px rendition
+        // arrives as a postage stamp. Take the widest one that fits the byte
+        // ceiling rather than a fixed name -- which rendition that is varies
+        // per GIF, and `fixed_width` is only ever 200px across.
+        let candidates = ["original", "downsized_large", "downsized_medium", "downsized", "fixed_width"]
+            .compactMap(media)
+            .filter { $0.width > 0 }
+        let affordable = candidates.filter { $0.bytes == 0 || $0.bytes <= maxCopyBytes }
+        // Every rendition over the ceiling: take the smallest rather than none.
+        guard let full = affordable.max(by: { $0.width < $1.width })
+                ?? candidates.min(by: { $0.bytes < $1.bytes })
+                ?? media("original")
+        else { return nil }
+
+        // The grid wants the cheap one; it is only ever drawn a few hundred
+        // points wide.
         let preview = media("fixed_width") ?? media("fixed_width_downsampled") ?? full
         return GifItem(
             id: "giphy:\(id)",
             title: result["title"] as? String ?? "GIF",
-            previewURL: preview.0,
-            gifURL: full.0,
-            width: preview.1,
-            height: preview.2,
+            previewURL: preview.url,
+            gifURL: full.url,
+            width: preview.width,
+            height: preview.height,
             sourceURL: (result["url"] as? String).flatMap(URL.init(string:))
         )
     }

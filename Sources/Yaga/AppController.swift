@@ -12,6 +12,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// close mid-drag, so dismissal is managed here instead.
     private var outsideClickMonitor: Any?
     private var keyMonitor: Any?
+    private var scrollMonitor: Any?
+    private var scrollZoom = ScrollZoom()
     private var reaperTimer: Timer?
     /// Set by the settings page. While it is up, an outside click must not
     /// dismiss the popover — the user is often in another app copying a key.
@@ -32,6 +34,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         HotkeyManager.shared.onTrigger = { [weak self] paste in self?.togglePopover(paste: paste) }
         HotkeyManager.shared.start()
         installKeyHandling()
+        installScrollZoom()
         startCacheReaper()
         UpdateChecker.shared.checkIfDue()
     }
@@ -162,9 +165,46 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             case (_, true, "w") where self.popover.isShown:
                 self.closePopover()
                 return nil
+            // ⌘+ / ⌘- match the scroll and pinch zooms. Shift-= is what an
+            // unshifted "+" arrives as on most layouts, so both are taken.
+            case (_, true, "="), (_, true, "+"):
+                guard self.canZoom else { return event }
+                self.zoom(by: 1)
+                return nil
+            case (_, true, "-"), (_, true, "_"):
+                guard self.canZoom else { return event }
+                self.zoom(by: -1)
+                return nil
             default:
                 return event
             }
+        }
+    }
+
+    /// Zooming only makes sense on the grid, not the settings page.
+    private var canZoom: Bool { popover.isShown && !isShowingSettings }
+
+    private func zoom(by step: Int) {
+        withAnimation(.easeOut(duration: 0.12)) { Settings.shared.zoom(by: step) }
+    }
+
+    /// ⌘-scroll resizes the grid, the way it does in a browser. The pinch
+    /// gesture covers trackpads; this is the same thing for a mouse, which has
+    /// no way to pinch.
+    private func installScrollZoom() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, self.canZoom,
+                  event.modifierFlags.contains(.command)
+            else { return event }
+
+            let steps = self.scrollZoom.steps(
+                for: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas
+            )
+            for _ in 0..<abs(steps) {
+                self.zoom(by: steps > 0 ? 1 : -1)
+            }
+            // Swallowed: otherwise the grid scrolls while it resizes.
+            return nil
         }
     }
 
@@ -244,6 +284,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func closePopover() {
         isShowingSettings = false
         isPasteMode = false
+        scrollZoom.reset()
         NotificationCenter.default.post(name: .dismissSettingsPage, object: nil)
         popover.performClose(nil)
         stopWatchingForOutsideClicks()
@@ -350,4 +391,25 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         showPopover()
         return true
     }
+}
+
+/// Turns a stream of scroll deltas into whole column steps.
+///
+/// A mouse wheel reports coarse whole lines while a trackpad reports pixels
+/// many times a second, so neither can drive the grid directly: the deltas are
+/// brought to a common scale and banked until they add up to a column.
+struct ScrollZoom {
+    /// Pixels of precise scrolling worth one wheel line.
+    private static let pixelsPerLine: CGFloat = 16
+    private var accumulated: CGFloat = 0
+
+    /// Positive steps enlarge (scrolling up), negative shrink.
+    mutating func steps(for delta: CGFloat, precise: Bool) -> Int {
+        accumulated += precise ? delta / Self.pixelsPerLine : delta
+        let whole = Int(accumulated)
+        accumulated -= CGFloat(whole)
+        return whole
+    }
+
+    mutating func reset() { accumulated = 0 }
 }

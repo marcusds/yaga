@@ -42,6 +42,21 @@ struct SettingsView: View {
                     ForEach(CopyMode.allCases) { Text($0.label).tag($0) }
                 }
                 Toggle("Close window after copying", isOn: $settings.closeAfterCopy)
+                if LaunchAtLogin.isSupported {
+                    Toggle("Open Yaga at login", isOn: $settings.launchAtLogin)
+                    if let problem = settings.launchAtLoginProblem {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text(problem)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Open…") { LaunchAtLogin.openLoginItemsSettings() }
+                                .controlSize(.small)
+                        }
+                    }
+                }
                 shortcutRow(
                     "Insert shortcut",
                     hotkey: $settings.pasteHotkey,
@@ -110,6 +125,16 @@ struct SettingsView: View {
                     Text("1 GB").tag(1024)
                     Text("2 GB").tag(2048)
                 }
+                Picker("Copy GIFs up to", selection: $settings.maxCopyMB) {
+                    Text("2 MB").tag(2)
+                    Text("5 MB").tag(5)
+                    Text("10 MB").tag(10)
+                    Text("25 MB").tag(25)
+                    Text("50 MB").tag(50)
+                }
+                Text("Chat apps show a GIF at its own size, so a bigger limit means a bigger GIF in Slack — and a longer wait when you pick one. Yaga copies the largest version that fits.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Picker("Expire unused after", selection: $settings.cacheMaxAgeDays) {
                     Text("7 days").tag(7)
                     Text("30 days").tag(30)
