@@ -48,6 +48,19 @@ enum Shelf: String, CaseIterable, Identifiable {
     }
 }
 
+/// A read-only summary of the library, for the Stats section in Settings.
+struct LibraryStats: Equatable {
+    /// GIFs the library remembers, favourites included.
+    var tracked = 0
+    var favourites = 0
+    /// Every copy, insert and drag ever recorded — not the number of distinct
+    /// GIFs, so it keeps counting past the point where history is pruned.
+    var picks = 0
+    var busiestTitle: String?
+    var busiestUses = 0
+    var lastPick: Date?
+}
+
 /// Persistent store of recents / frequents / favourites, saved as JSON in
 /// ~/Library/Application Support/Yaga/library.json
 @MainActor
@@ -123,6 +136,33 @@ final class Library: ObservableObject {
     nonisolated static let habitThreshold = 3
     /// How long a frequently-used GIF stays protected after its last use.
     nonisolated static let habitWindow: TimeInterval = 180 * 86_400
+
+    var stats: LibraryStats { Library.stats(for: entries) }
+
+    /// Taken over a passed-in dictionary rather than `entries` so it can be
+    /// exercised without the shared library on disk.
+    nonisolated static func stats(for entries: [String: LibraryEntry]) -> LibraryStats {
+        var stats = LibraryStats()
+        stats.tracked = entries.count
+        var busiestLastUsed = Date.distantPast
+        for entry in entries.values {
+            if entry.isFavourite { stats.favourites += 1 }
+            stats.picks += entry.useCount
+            // A favourite that has never been picked is not the busiest GIF,
+            // however recently it was starred.
+            guard entry.useCount > 0 else { continue }
+            // Ties go to the more recent GIF, matching the Frequent shelf.
+            if (entry.useCount, entry.lastUsed) > (stats.busiestUses, busiestLastUsed) {
+                stats.busiestTitle = entry.item.title
+                stats.busiestUses = entry.useCount
+                busiestLastUsed = entry.lastUsed
+            }
+            if entry.lastUsed > stats.lastPick ?? .distantPast {
+                stats.lastPick = entry.lastUsed
+            }
+        }
+        return stats
+    }
 
     func isFavourite(_ item: GifItem) -> Bool {
         entries[item.id]?.isFavourite ?? false

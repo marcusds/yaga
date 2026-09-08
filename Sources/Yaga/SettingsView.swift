@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: Settings
     @EnvironmentObject private var library: Library
     @State private var cacheSize: Int64 = 0
+    @State private var cacheFiles = 0
     @State private var accessibilityTrusted = AutoPaste.isTrusted
     @StateObject private var updates = UpdateChecker.shared
     @StateObject private var hotkeys = HotkeyManager.shared
@@ -117,8 +118,33 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Stats") {
+                let stats = library.stats
+                LabeledContent("GIFs picked", value: stats.picks.formatted())
+                LabeledContent("In your history", value: stats.tracked.formatted())
+                LabeledContent("Favourites", value: stats.favourites.formatted())
+                if let title = stats.busiestTitle {
+                    LabeledContent("Most used") {
+                        // A GIPHY title can be a sentence, so it gets the room
+                        // rather than pushing the count off the row.
+                        Text("\(title) · \(stats.busiestUses.formatted())×")
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+                if let last = stats.lastPick {
+                    LabeledContent("Last picked", value: last.formatted(.relative(presentation: .named)))
+                }
+                LabeledContent("Cached on disk") {
+                    Text("\(cacheFiles.formatted()) GIFs · \(ByteCountFormatter.string(fromByteCount: cacheSize, countStyle: .file))")
+                }
+                if stats.picks == 0 {
+                    Text("Pick a GIF and this fills in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Storage") {
-                LabeledContent("Cached GIFs", value: ByteCountFormatter.string(fromByteCount: cacheSize, countStyle: .file))
                 Picker("Keep at most", selection: $settings.cacheLimitMB) {
                     Text("250 MB").tag(250)
                     Text("500 MB").tag(500)
@@ -148,7 +174,7 @@ struct SettingsView: View {
                     Button("Empty Cache") {
                         Task {
                             await GifCache.shared.clear()
-                            cacheSize = await GifCache.shared.diskSize()
+                            await refreshCacheUsage()
                         }
                     }
                     Button("Clear History") { library.clearHistory() }
@@ -165,7 +191,7 @@ struct SettingsView: View {
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { cacheSize = await GifCache.shared.diskSize() }
+        .task { await refreshCacheUsage() }
         // The permission is granted in System Settings, with no notification
         // back to us, so watch for it while this page is open.
         .task {
@@ -174,6 +200,12 @@ struct SettingsView: View {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
+    }
+
+    private func refreshCacheUsage() async {
+        let usage = await GifCache.shared.usage()
+        cacheFiles = usage.files
+        cacheSize = usage.bytes
     }
 
     private var updateStatus: String {

@@ -110,9 +110,51 @@ enum SelfTest {
         checkRenditionChoice(check)
         checkLaunchAtLogin(check)
         checkScrollZoom(check)
+        checkLibraryStats(check)
 
         print(failures.isEmpty ? "\nself-test passed" : "\nself-test FAILED: \(failures.count) check(s)")
         return failures.isEmpty
+    }
+
+    /// The Stats section in Settings. Counting is easy to get subtly wrong:
+    /// a favourite may never have been picked, and picks keep accruing after
+    /// history has been pruned, so the two are not the same number.
+    private static func checkLibraryStats(_ check: (String, Bool) -> Void) {
+        let now = Date()
+        func entry(_ id: String, uses: Int, favourite: Bool, used: Date) -> (String, LibraryEntry) {
+            let item = GifItem(id: id, title: id, previewURL: URL(string: "https://e.com/\(id)p")!,
+                               gifURL: URL(string: "https://e.com/\(id)")!,
+                               width: 200, height: 200, sourceURL: nil)
+            return (id, LibraryEntry(item: item, useCount: uses, lastUsed: used, isFavourite: favourite))
+        }
+
+        let entries = Dictionary(uniqueKeysWithValues: [
+            entry("often", uses: 9, favourite: false, used: now.addingTimeInterval(-3600)),
+            entry("sometimes", uses: 4, favourite: true, used: now),
+            entry("starred-never-used", uses: 0, favourite: true, used: now.addingTimeInterval(-60)),
+        ])
+        let stats = Library.stats(for: entries)
+
+        check("history counts every GIF it remembers", stats.tracked == 3)
+        check("favourites are counted, picked or not", stats.favourites == 2)
+        check("picks add up across GIFs", stats.picks == 13)
+        check("the most-used GIF is the busiest, not the most recent",
+              stats.busiestTitle == "often" && stats.busiestUses == 9)
+        check("an unpicked favourite is never the busiest",
+              stats.busiestTitle != "starred-never-used")
+        check("last picked ignores a favourite that was never picked",
+              stats.lastPick == now)
+
+        let tied = Dictionary(uniqueKeysWithValues: [
+            entry("older", uses: 5, favourite: false, used: now.addingTimeInterval(-86_400)),
+            entry("newer", uses: 5, favourite: false, used: now),
+        ])
+        check("a tie on uses goes to the more recent GIF",
+              Library.stats(for: tied).busiestTitle == "newer")
+
+        let empty = Library.stats(for: [:])
+        check("an empty library has nothing to boast about",
+              empty == LibraryStats() && empty.busiestTitle == nil)
     }
 
     /// A mouse has no pinch gesture, so ⌘-scroll drives the same zoom. The

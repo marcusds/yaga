@@ -195,10 +195,17 @@ actor GifCache {
 
     /// Bytes held on disk. Hard links in `named/` share inodes with `blobs/`,
     /// so counting the blobs alone is the true figure.
-    func diskSize() -> Int64 {
+    func diskSize() -> Int64 { usage().bytes }
+
+    /// What is on disk, in one pass: the same walk the size needs already has
+    /// the file count in hand.
+    func usage() -> (files: Int, bytes: Int64) {
         let manager = FileManager.default
         let files = (try? manager.contentsOfDirectory(at: blobs, includingPropertiesForKeys: [.fileSizeKey])) ?? []
-        return files.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        let bytes = files.reduce(Int64(0)) {
+            $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        return (files.count, bytes)
     }
 
     // MARK: - Naming
