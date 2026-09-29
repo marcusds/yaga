@@ -6,10 +6,9 @@ import SwiftUI
 struct AnimatedGif: NSViewRepresentable {
     let data: Data
 
-    func makeNSView(context: Context) -> NSImageView {
-        let view = NSImageView()
+    func makeNSView(context: Context) -> VisibleOnlyImageView {
+        let view = VisibleOnlyImageView()
         view.imageScaling = .scaleAxesIndependently
-        view.animates = true
         view.canDrawSubviewsIntoLayer = true
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
@@ -17,11 +16,11 @@ struct AnimatedGif: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ view: NSImageView, context: Context) {
+    func updateNSView(_ view: VisibleOnlyImageView, context: Context) {
         if context.coordinator.data != data {
             context.coordinator.data = data
             view.image = NSImage(data: data)
-            view.animates = true
+            view.updateAnimation()
         }
     }
 
@@ -30,6 +29,42 @@ struct AnimatedGif: NSViewRepresentable {
     final class Coordinator {
         var data: Data
         init(data: Data) { self.data = data }
+    }
+}
+
+/// An image view that animates only while its window is on screen. The
+/// popover's views outlive the popover, and a closed panel full of GIFs would
+/// otherwise keep decoding frames and waking the CPU in the background.
+final class VisibleOnlyImageView: NSImageView {
+    private var occlusionObserver: NSObjectProtocol?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+            self.occlusionObserver = nil
+        }
+        if let window {
+            occlusionObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateAnimation() }
+            }
+        }
+        updateAnimation()
+    }
+
+    func updateAnimation() {
+        let visible = window?.occlusionState.contains(.visible) ?? false
+        if animates != visible { animates = visible }
+    }
+
+    deinit {
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+        }
     }
 }
 
