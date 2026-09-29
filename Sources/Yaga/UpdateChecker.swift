@@ -81,13 +81,12 @@ final class UpdateChecker: ObservableObject {
               !isInstalling, !AppController.shared.isPanelOpen,
               latestVersion != UserDefaults.standard.string(forKey: Self.failedVersionKey)
         else { return }
-        Task { await install(showingSettings: false) }
+        Task { await install() }
     }
 
     /// Fetches the latest release afresh -- the download URL is not kept
-    /// across launches -- installs it, and relaunches. A requested install
-    /// reopens on the settings page; an automatic one comes back quietly.
-    func install(showingSettings: Bool = true) async {
+    /// across launches -- installs it, and relaunches.
+    func install() async {
         guard !isInstalling else { return }
         isInstalling = true
         installError = nil
@@ -101,7 +100,7 @@ final class UpdateChecker: ObservableObject {
                 throw UpdateInstaller.Failure.noAsset
             }
             try await UpdateInstaller.install(from: asset.browser_download_url)
-            UpdateInstaller.relaunch(showingSettings: showingSettings)
+            UpdateInstaller.relaunch()
         } catch {
             installError = error.localizedDescription
             UserDefaults.standard.set(tag ?? latestVersion, forKey: Self.failedVersionKey)

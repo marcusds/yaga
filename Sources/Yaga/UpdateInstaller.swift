@@ -71,23 +71,19 @@ enum UpdateInstaller {
         _ = try files.replaceItemAt(installed, withItemAt: app, options: .usingNewMetadataOnly)
     }
 
-    /// Passed to the relaunched copy when the user asked for the update, so it
-    /// comes back on the settings page they installed it from.
-    static let showSettingsArgument = "--show-settings"
-
     /// Quits, and opens the (now replaced) bundle once this process is gone.
     /// A second copy cannot start while the first still holds the hotkeys, so
     /// the relaunch waits on the PID rather than a fixed delay.
-    static func relaunch(showingSettings: Bool) {
+    static func relaunch() {
         let pid = ProcessInfo.processInfo.processIdentifier
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/sh")
         // The path is passed as $0 so no quoting of it is needed.
         task.arguments = [
             "-c",
-            "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \"$0\" --args \"$@\"",
+            "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \"$0\"",
             Bundle.main.bundleURL.path,
-        ] + (showingSettings ? [showSettingsArgument] : [])
+        ]
         try? task.run()
         NSApp.terminate(nil)
     }

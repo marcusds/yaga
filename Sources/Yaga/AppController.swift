@@ -37,12 +37,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         installScrollZoom()
         startCacheReaper()
         UpdateChecker.shared.checkIfDue()
-
-        if CommandLine.arguments.contains(UpdateInstaller.showSettingsArgument) {
-            // Next turn of the run loop, once the status item has a window to
-            // anchor the panel to.
-            DispatchQueue.main.async { self.showSettings() }
-        }
     }
 
     /// An LSUIElement app shows no menu bar, but AppKit still routes command-key
