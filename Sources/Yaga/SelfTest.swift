@@ -300,6 +300,14 @@ enum SelfTest {
         check("a v prefix is ignored", newer("v0.4.0", "0.3.0") && !newer("v0.3.0", "0.3.0"))
         check("missing components count as zero", newer("0.4", "0.3.9") && !newer("0.3", "0.3.0"))
         check("garbage is never newer", !newer("", "0.3.0") && !newer("banana", "0.3.0"))
+
+        // The updater must pick the app zip, not whatever else a release carries.
+        func asset(_ name: String) -> UpdateChecker.Release.Asset {
+            .init(name: name, browser_download_url: URL(string: "https://example.com/\(name)")!)
+        }
+        let isApp = UpdateChecker.isAppAsset
+        check("the app zip is the update", isApp(asset("Yaga-0.11.0-arm64.zip")))
+        check("source archives are not", !isApp(asset("yaga-0.11.0.tar.gz")) && !isApp(asset("Source.zip")))
     }
 
     /// API keys sit in a plain file now, so the file mode is the only thing

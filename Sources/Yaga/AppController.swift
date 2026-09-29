@@ -37,6 +37,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         installScrollZoom()
         startCacheReaper()
         UpdateChecker.shared.checkIfDue()
+
+        if CommandLine.arguments.contains(UpdateInstaller.showSettingsArgument) {
+            // Next turn of the run loop, once the status item has a window to
+            // anchor the panel to.
+            DispatchQueue.main.async { self.showSettings() }
+        }
     }
 
     /// An LSUIElement app shows no menu bar, but AppKit still routes command-key
@@ -118,6 +124,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             Task { @MainActor in
                 AppController.shared.reapCacheIfDue()
                 UpdateChecker.shared.checkIfDue()
+                UpdateChecker.shared.installIfIdle()
             }
         }
     }
@@ -280,6 +287,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NotificationCenter.default.post(name: .popoverDidOpen, object: nil, userInfo: ["paste": paste])
         startWatchingForOutsideClicks()
     }
+
+    var isPanelOpen: Bool { popover?.isShown ?? false }
 
     func closePopover() {
         isShowingSettings = false

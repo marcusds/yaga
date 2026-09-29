@@ -1,19 +1,19 @@
 import AppKit
 import Foundation
 
-/// Asks GitHub, at most once a week, whether a newer release exists.
-///
-/// There is no updater here and deliberately so: the app cannot replace its
-/// own bundle without the App Management permission, so this only ever points
-/// at the release page and lets the user decide.
+/// Asks GitHub, at most once a day, whether a newer release exists, and
+/// installs it -- automatically while the panel is closed, or on request.
 @MainActor
 final class UpdateChecker: ObservableObject {
     static let shared = UpdateChecker()
 
     static let repository = "marcusds/yaga"
-    private static let interval: TimeInterval = 7 * 86_400
+    private static let interval: TimeInterval = 86_400
     private static let lastCheckKey = "lastUpdateCheckAt"
     private static let lastSeenKey = "lastSeenRelease"
+    /// A release that failed to install is not retried automatically, or a
+    /// broken one would be downloaded again every hour.
+    private static let failedVersionKey = "failedUpdateVersion"
 
     /// The newest release tag GitHub has told us about, remembered across
     /// launches so the badge does not vanish until it is actually installed.
@@ -21,6 +21,8 @@ final class UpdateChecker: ObservableObject {
     @Published private(set) var isChecking = false
     @Published private(set) var lastError: String?
     @Published private(set) var lastChecked: Date?
+    @Published private(set) var isInstalling = false
+    @Published private(set) var installError: String?
 
     let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
 
@@ -39,7 +41,7 @@ final class UpdateChecker: ObservableObject {
         URL(string: "https://github.com/\(Self.repository)/releases/latest")!
     }
 
-    /// Runs at most weekly. The timestamp is written before the request so a
+    /// Runs at most daily. The timestamp is written before the request so a
     /// failing network does not mean retrying on every launch.
     func checkIfDue(force: Bool = false) {
         guard force || Settings.shared.checkForUpdates else { return }
@@ -61,15 +63,65 @@ final class UpdateChecker: ObservableObject {
         lastChecked = now
 
         do {
-            let tag = try await fetchLatestTag()
+            let tag = try await fetchLatestRelease().tag_name
             latestVersion = tag
             UserDefaults.standard.set(tag, forKey: Self.lastSeenKey)
         } catch {
             lastError = error.localizedDescription
         }
+        installIfIdle()
     }
 
-    private func fetchLatestTag() async throws -> String {
+    /// Installs a known update if automatic installs are on and the panel is
+    /// closed. Called after each check and on the hourly tick, so an update
+    /// found while the panel was open goes in soon after it closes.
+    func installIfIdle() {
+        let settings = Settings.shared
+        guard settings.checkForUpdates, settings.installUpdates, updateAvailable,
+              !isInstalling, !AppController.shared.isPanelOpen,
+              latestVersion != UserDefaults.standard.string(forKey: Self.failedVersionKey)
+        else { return }
+        Task { await install(showingSettings: false) }
+    }
+
+    /// Fetches the latest release afresh -- the download URL is not kept
+    /// across launches -- installs it, and relaunches. A requested install
+    /// reopens on the settings page; an automatic one comes back quietly.
+    func install(showingSettings: Bool = true) async {
+        guard !isInstalling else { return }
+        isInstalling = true
+        installError = nil
+        defer { isInstalling = false }
+
+        var tag: String?
+        do {
+            let release = try await fetchLatestRelease()
+            tag = release.tag_name
+            guard let asset = release.assets.first(where: Self.isAppAsset) else {
+                throw UpdateInstaller.Failure.noAsset
+            }
+            try await UpdateInstaller.install(from: asset.browser_download_url)
+            UpdateInstaller.relaunch(showingSettings: showingSettings)
+        } catch {
+            installError = error.localizedDescription
+            UserDefaults.standard.set(tag ?? latestVersion, forKey: Self.failedVersionKey)
+        }
+    }
+
+    struct Release: Decodable {
+        struct Asset: Decodable {
+            let name: String
+            let browser_download_url: URL
+        }
+        let tag_name: String
+        let assets: [Asset]
+    }
+
+    nonisolated static func isAppAsset(_ asset: Release.Asset) -> Bool {
+        asset.name.hasPrefix("Yaga-") && asset.name.hasSuffix("-arm64.zip")
+    }
+
+    private func fetchLatestRelease() async throws -> Release {
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repository)/releases/latest")!)
         // GitHub rejects requests without one.
         request.setValue("Yaga/\(currentVersion)", forHTTPHeaderField: "User-Agent")
@@ -80,8 +132,7 @@ final class UpdateChecker: ObservableObject {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw GifError.http(http.statusCode)
         }
-        struct Release: Decodable { let tag_name: String }
-        return try JSONDecoder().decode(Release.self, from: data).tag_name
+        return try JSONDecoder().decode(Release.self, from: data)
     }
 
     /// Compares dotted version numbers a component at a time, so 0.10.0 beats

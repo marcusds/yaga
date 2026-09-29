@@ -89,7 +89,9 @@ struct SettingsView: View {
             }
 
             Section("Updates") {
-                Toggle("Check weekly for updates", isOn: $settings.checkForUpdates)
+                Toggle("Check daily for updates", isOn: $settings.checkForUpdates)
+                Toggle("Install updates automatically", isOn: $settings.installUpdates)
+                    .disabled(!settings.checkForUpdates)
                 LabeledContent("Version") {
                     HStack(spacing: 8) {
                         Text(updates.currentVersion)
@@ -108,8 +110,22 @@ struct SettingsView: View {
                         Text("\(latest) is available.")
                             .font(.caption)
                         Spacer()
-                        Button("Download…") { NSWorkspace.shared.open(updates.releaseURL) }
-                            .controlSize(.small)
+                        if updates.isInstalling {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button("Install & Relaunch") { Task { await updates.install() } }
+                                .controlSize(.small)
+                        }
+                    }
+                    if let error = updates.installError {
+                        HStack(spacing: 8) {
+                            Text("Could not install: \(error)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Download…") { NSWorkspace.shared.open(updates.releaseURL) }
+                                .controlSize(.small)
+                        }
                     }
                 } else {
                     Text(updateStatus)

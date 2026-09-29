@@ -115,10 +115,15 @@ final class Settings: ObservableObject {
     /// Why the last login-item change did not take, if it did not.
     @Published var launchAtLoginProblem: String?
 
-    /// Ask GitHub weekly whether a newer release exists. The only network
+    /// Ask GitHub daily whether a newer release exists. The only network
     /// call Yaga makes that is not a GIF search, so it can be turned off.
     @Published var checkForUpdates: Bool = UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true {
         didSet { defaults.set(checkForUpdates, forKey: "checkForUpdates") }
+    }
+
+    /// Install a found update, and relaunch, while the panel is closed.
+    @Published var installUpdates: Bool = UserDefaults.standard.object(forKey: "installUpdates") as? Bool ?? true {
+        didSet { defaults.set(installUpdates, forKey: "installUpdates") }
     }
 
     /// Columns in the GIF grid. Pinch-to-zoom and ⌘+/⌘- drive this.

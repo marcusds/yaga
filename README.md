@@ -36,9 +36,10 @@ not carried over, so enter yours once more after upgrading.
   Space picks. 1–9 pick the first nine GIFs directly — including as the opening
   keystroke in the empty search box, after which digits type normally. Esc walks
   back up, then closes.
-- Checks GitHub weekly for a newer release and shows a dot on the gear icon.
-  Turn it off in Settings → Updates; nothing is downloaded or installed, it
-  only links to the release page.
+- Checks GitHub daily for a newer release and installs it while the panel is
+  closed, then relaunches. A download is only installed if it is signed by the
+  same certificate as the running copy. Settings → Updates turns off automatic
+  installs (leaving an Install & Relaunch button) or checking altogether.
 - Pinch, ⌘-scroll or ⌘+/⌘- to change grid density, from five GIFs a row down
   to one. ⌘-scroll is there because a mouse cannot pinch.
 - Settings → Behaviour → Open Yaga at login registers the app as a login
